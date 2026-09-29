@@ -9,7 +9,7 @@
 
 | 模式 | 音源 | 用途 | 乐手动画驱动 |
 |---|---|---|---|
-| **公开模式**（默认，GitHub Pages） | 巨幕上的 YouTube 嵌入 `onVhbeY7nLM`，声音来自视频本身 | 分享给别人看 | Cue 时间表（按 `player.getCurrentTime()` 触发） |
+| **公开模式**（默认，GitHub Pages） | 巨幕上的 YouTube 嵌入（ID 见 `src/songs.js`），声音来自片段本身 | 分享给别人看 | Cue 时间表（按 `player.getCurrentTime()` 触发） |
 | **本地模式**（仅自己电脑） | 用户自己放在 `media/` 下的视频/音频文件 | 自己爽 | Web Audio `AnalyserNode` 实时频谱 + Cue 时间表 |
 
 - `media/` 已加入 `.gitignore`，**任何受版权保护的音视频都不得提交到仓库**。
@@ -22,7 +22,7 @@
 ## 视觉：Three.js 3D 音乐厅
 
 - **舞台**：深色音乐厅，巨大的管风琴音管墙位于舞台后方两侧，中央是巨幕。
-- **巨幕**：公开模式用 `CSS3DRenderer` 把 YouTube iframe 放进 3D 空间，
+- **巨幕**：播放电影原片片段。公开模式用 `CSS3DRenderer` 把 YouTube iframe 放进 3D 空间，
   与 WebGL 场景共享相机；本地模式直接用 `VideoTexture`（可加 bloom 发光）。
 - **乐团：追求写实**（参考真实交响音乐会的现场照片，而不是游戏风格）
   - 中央：管风琴手坐在巨大的教堂式管风琴控制台前（致敬原声在伦敦 Temple Church 录制）
@@ -54,11 +54,11 @@
 - 点"开场"按钮开始演出，这一下同时解锁浏览器的有声播放限制
 - 演出中可以唤出一个低调的底部控制条：跳到下一首、结束演出
 - 曲目之间：灯光转暗，乐手放下乐器，舞台侧的字幕牌显示下一首的曲名
-- 巨幕内容由每首歌的 `screen` 字段决定：
-  - `youtube`：显示视频画面（目前只有对接场景）
-  - `gargantua`：自绘黑洞 Gargantua 的引力透镜 shader，随 intensity 变亮、吸积盘转速加快；
-    YouTube 播放器照常播放声音，但把它隐藏起来
-- 本地模式按 slug 找文件：`media/<slug>.mp4` 或 `media/<slug>.mp3`
+- 每一首都是**电影原片片段**（优先 Paramount Movies 官方频道），巨幕直接播放片段，
+  声音是电影原声（配乐 + 音效 + 对白）
+- 节目单上标注每段的来源频道；`official: false` 的片段要标"非官方上传"
+- **曲间换场**时巨幕显示自绘的黑洞 Gargantua 引力透镜 shader，配合舞台灯光转暗
+- 本地模式按 slug 找文件：`media/<slug>.mp4`
 
 ## 演出流程
 
