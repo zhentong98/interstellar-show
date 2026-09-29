@@ -15,7 +15,7 @@
 
 - Vite + Three.js，纯静态，部署到 GitHub Pages（`vite.config.js` 的 `base` 设为 `/interstellar-show/`）
 - 代码注释与 UI 文案使用简体中文
-- 演出节奏集中在 `src/cues.js`，不要把时间点散落在其他文件
+- 曲目数据集中在 `src/songs.js`（YouTube ID 已核实，勿改）；演出节奏集中在 `src/cues/<slug>.js`，不要把时间点散落在其他文件
 
 ## 常用命令
 
