@@ -1,0 +1,6 @@
+node_modules/
+dist/
+.DS_Store
+
+# 受版权保护的音视频只放本地，永不提交
+media/
