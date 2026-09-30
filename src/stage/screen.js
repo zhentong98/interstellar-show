@@ -11,7 +11,7 @@ import { CSS3DObject } from 'three/addons/renderers/CSS3DRenderer.js';
 import { SCREEN } from './layout.js';
 import { screenVertex, screenFragment } from './gargantua.glsl.js';
 import { clamp01 } from '../core/math.js';
-import { fontsReady, drawSpaced, SERIF_LATIN, SERIF_CJK } from '../ui/fonts.js';
+import { fontsReady, drawSpaced, WIDE, SANS_CJK } from '../ui/fonts.js';
 
 const PX_WIDTH = 1920; // iframe 的 CSS 像素宽度，决定 YouTube 选择的清晰度
 const OVERSCAN = 1.006; // iframe 比挖洞区域略大一点，洞的边缘只会露出视频本身
@@ -117,25 +117,30 @@ export class GiantScreen {
     ctx.fillStyle = bg;
     ctx.fillRect(0, 0, w, h);
 
+    // 和节目单一致：极细的宽体片名、一道金线、黑体的中文副标题
     ctx.textAlign = 'center';
     ctx.textBaseline = 'alphabetic';
-    ctx.fillStyle = '#e9e1d2';
-    ctx.font = `500 150px ${SERIF_LATIN}`;
-    drawSpaced(ctx, 'INTERSTELLAR', w / 2, h * 0.47, 38);
+    ctx.fillStyle = '#eee9e0';
+    const spacing = 14;
+    let size = 132;
+    ctx.font = `200 ${size}px ${WIDE}`;
+    const width = ctx.measureText('INTERSTELLAR').width + spacing * 11;
+    if (width > w * 0.74) {
+      size = Math.floor((size * w * 0.74) / width);
+      ctx.font = `200 ${size}px ${WIDE}`;
+    }
+    drawSpaced(ctx, 'INTERSTELLAR', w / 2, h * 0.49, spacing);
 
-    ctx.strokeStyle = 'rgba(201, 164, 106, 0.8)';
+    ctx.strokeStyle = 'rgba(242, 194, 126, 0.75)';
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.moveTo(w / 2 - 260, h * 0.53);
-    ctx.lineTo(w / 2 + 260, h * 0.53);
+    ctx.moveTo(w / 2 - 200, h * 0.55);
+    ctx.lineTo(w / 2 + 200, h * 0.55);
     ctx.stroke();
 
-    ctx.fillStyle = '#c9b89a';
-    ctx.font = `400 58px ${SERIF_CJK}`;
-    drawSpaced(ctx, '星际穿越 · 电影交响音乐会', w / 2, h * 0.62, 10);
-    ctx.fillStyle = 'rgba(201, 184, 154, 0.55)';
-    ctx.font = `italic 400 44px ${SERIF_LATIN}`;
-    ctx.fillText('Live to Picture', w / 2, h * 0.7);
+    ctx.fillStyle = '#cfc6b6';
+    ctx.font = `300 54px ${SANS_CJK}`;
+    drawSpaced(ctx, '星际穿越　电影交响音乐会', w / 2, h * 0.64, 16);
     this.cardTexture.needsUpdate = true;
   }
 }

@@ -1,8 +1,9 @@
-// 演出中的底部控制条：默认隐藏，鼠标移到屏幕底部才出现（选镜头 / 跳到下一首 / 结束演出）。
+// 演出中的底部控制条：默认隐藏，鼠标移到屏幕底部才出现（选镜头 / 跳到下一首 / 全屏 / 结束演出）。
+// 入场时不自动全屏，想全屏再点这里的"全屏"。
 // 同时负责"点击继续"之类的提示，以及演出中隐藏鼠标。
 // 镜头也能用键盘切换：1 座位、0 自动导播、2～8 固定机位、F 自由移动（控制条不出现也能用）。
 
-import { setCursorHidden } from './fullscreen.js';
+import { setCursorHidden, canFullscreen, isFullscreen, toggleFullscreen } from './fullscreen.js';
 import { VIEWS } from '../stage/cameraRig.js';
 
 const REVEAL_ZONE = 110; // 距底部多少像素内唤出控制条
@@ -14,6 +15,7 @@ export class ShowControls {
       <div class="controls-bar" role="toolbar" aria-label="演出控制">
         <span class="controls-status"></span>
         <button type="button" data-action="next">下一首</button>
+        <button type="button" data-action="fullscreen"${canFullscreen() ? '' : ' hidden'}>全屏</button>
         <button type="button" data-action="end">结束演出</button>
       </div>
       <div class="controls-bar controls-views" role="toolbar" aria-label="镜头">
@@ -35,8 +37,12 @@ export class ShowControls {
     this.bar.addEventListener('click', (e) => {
       const action = e.target.closest('button')?.dataset.action;
       if (action === 'next') this.director?.skip();
+      if (action === 'fullscreen') toggleFullscreen();
       if (action === 'end') this.director?.end();
     });
+    this.onFullscreen = () => {
+      this.bar.querySelector('[data-action=fullscreen]').textContent = isFullscreen() ? '退出全屏' : '全屏';
+    };
     this.views.addEventListener('click', (e) => {
       const id = e.target.closest('button')?.dataset.view;
       if (id) this.setView(id);
@@ -70,6 +76,8 @@ export class ShowControls {
     window.addEventListener('mousemove', this.onMove);
     window.addEventListener('touchstart', this.onTouch, { passive: true });
     window.addEventListener('pointerdown', this.onPromptClick, true);
+    document.addEventListener('fullscreenchange', this.onFullscreen);
+    document.addEventListener('webkitfullscreenchange', this.onFullscreen);
     setCursorHidden(true);
   }
 
@@ -82,6 +90,8 @@ export class ShowControls {
     window.removeEventListener('mousemove', this.onMove);
     window.removeEventListener('touchstart', this.onTouch);
     window.removeEventListener('pointerdown', this.onPromptClick, true);
+    document.removeEventListener('fullscreenchange', this.onFullscreen);
+    document.removeEventListener('webkitfullscreenchange', this.onFullscreen);
     setCursorHidden(false);
   }
 
