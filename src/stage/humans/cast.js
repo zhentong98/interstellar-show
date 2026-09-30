@@ -39,6 +39,19 @@ async function loadFile(l, file) {
 }
 
 /**
+ * 按材质名换成更写实的着色（scripts/make_cast.py 生成的模型用这些名字）：
+ * 西装 / 长裙是带织物光泽的哑光黑，皮肤有细微的绒毛光泽，皮鞋是亮面清漆，头发有丝状高光。
+ */
+const REALISTIC = {
+  suit: (m) => new THREE.MeshPhysicalMaterial({ name: m.name, color: m.color, roughness: 0.86, sheen: 0.8, sheenRoughness: 0.5, sheenColor: new THREE.Color(0x2a2a34) }),
+  shirt: (m) => new THREE.MeshPhysicalMaterial({ name: m.name, color: m.color, roughness: 0.75, sheen: 0.4, sheenColor: new THREE.Color(0xffffff) }),
+  skin: (m) => new THREE.MeshPhysicalMaterial({ name: m.name, color: m.color, roughness: 0.52, sheen: 0.35, sheenRoughness: 0.35, sheenColor: new THREE.Color(0xff9a80), specularIntensity: 0.5 }),
+  hair: (m) => new THREE.MeshPhysicalMaterial({ name: m.name, color: m.color, roughness: 0.55, sheen: 1, sheenRoughness: 0.3, sheenColor: m.color.clone().multiplyScalar(3) }),
+  shoes: (m) => new THREE.MeshPhysicalMaterial({ name: m.name, color: m.color, roughness: 0.35, clearcoat: 1, clearcoatRoughness: 0.08 }),
+  eye: (m) => new THREE.MeshPhysicalMaterial({ name: m.name, color: m.color, roughness: 0.1, clearcoat: 1 }),
+};
+
+/**
  * 统一材质：FBX 常见的 Phong 材质换成 PBR，头发等半透明贴图改成 alphaTest，
  * 避免大量半透明物体排序出错。
  */
@@ -49,6 +62,8 @@ function prepareMaterials(root) {
     o.receiveShadow = true;
     o.frustumCulled = false;
     const fix = (m) => {
+      const realistic = REALISTIC[(m.name ?? '').replace(/\.\d+$/, '')];
+      if (realistic) return realistic(m);
       let mat = m;
       if (!mat.isMeshStandardMaterial) {
         mat = new THREE.MeshStandardMaterial({

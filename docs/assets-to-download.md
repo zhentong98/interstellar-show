@@ -1,12 +1,17 @@
 # 需要手动下载的素材
 
-云端开发环境连不上 Poly Haven、Sketchfab 和 Mixamo，Sketchfab 和 Mixamo 还需要登录。所以写实人物要请你下载。
-**加载管线已经做好并测试通过**：放进 `public/models/`、写好 `cast.json`，乐团和指挥就会自动换成你的模型。
-拉弓、按弦、捧谱夹、打拍子的动作由 IK 驱动，任何 Mixamo 骨骼的模型都能直接用。
+## 现状：已经有一套写实人物，不用下载也能用
 
-> 没有 `cast.json` 时，网站继续使用程序化人体，公开部署不受影响。
+`public/models/` 里已经有 7 个写实人物（3 男、3 女、1 位指挥），是用开源的 MakeHuman 人体生成器（MPFB2）在云端生成的：
+真实的人体比例和五官、不同年龄体型和肤色、Mixamo 骨骼，演出服和头发由 `scripts/make_cast.py` 制作。
+全部是 CC0，可以公开部署，压缩后一共约 900 KB。
 
-## 一、写实人物：Sketchfab 免费模型 + Mixamo 自动绑骨
+它们没有皮肤贴图和布料褶皱，近看仍然不如游戏里的扫描模型。如果想更进一步，可以按下面的步骤换成
+Sketchfab 上的真人扫描模型：放进 `public/models/`，改 `cast.json`，就会替换掉现在的人物。
+
+云端开发环境连不上 Poly Haven、Sketchfab 和 Mixamo，Sketchfab 和 Mixamo 还需要登录，所以这一步需要你来下载。
+
+## 一、（可选）更精细的写实人物：Sketchfab 扫描模型 + Mixamo 自动绑骨
 
 ### 1. 在 Sketchfab 找模型（需要免费账号）
 

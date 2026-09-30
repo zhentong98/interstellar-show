@@ -6,6 +6,7 @@
 | 素材 | 作者 | 许可证 | 用途 | 来源 |
 |---|---|---|---|---|
 | three.js | three.js authors | MIT | 3D 渲染（含 CSS3DRenderer、后处理 Bloom、HDRLoader） | [github.com/mrdoob/three.js](https://github.com/mrdoob/three.js) |
+| 乐手与指挥的人体模型（`public/models/*.glb`） | MakeHuman 社区（基础网格、体型目标、Mixamo 骨骼，经 MPFB2 生成）；演出服、头发和材质由 `scripts/make_cast.py` 制作 | CC0 1.0 | 乐团写实人物 | [MPFB2](https://github.com/makehumancommunity/mpfb2) |
 | Draco 解码器 | Google | Apache 2.0 | 解压经 Draco 压缩的人物模型（`public/draco/`，随 three.js 分发） | [github.com/google/draco](https://github.com/google/draco) |
 | Cormorant Garamond | Christian Thalmann | SIL OFL 1.1 | 节目单与字幕牌的西文衬线字体 | [Google Fonts](https://fonts.google.com/specimen/Cormorant+Garamond) |
 | Noto Serif SC | Google、Adobe | SIL OFL 1.1 | 中文衬线字体 | [Google Fonts](https://fonts.google.com/noto/specimen/Noto+Serif+SC) |
