@@ -6,6 +6,7 @@
 | 素材 | 作者 | 许可证 | 用途 | 来源 |
 |---|---|---|---|---|
 | three.js | three.js authors | MIT | 3D 渲染（含 CSS3DRenderer、后处理 Bloom、HDRLoader） | [github.com/mrdoob/three.js](https://github.com/mrdoob/three.js) |
+| Draco 解码器 | Google | Apache 2.0 | 解压经 Draco 压缩的人物模型（`public/draco/`，随 three.js 分发） | [github.com/google/draco](https://github.com/google/draco) |
 | Cormorant Garamond | Christian Thalmann | SIL OFL 1.1 | 节目单与字幕牌的西文衬线字体 | [Google Fonts](https://fonts.google.com/specimen/Cormorant+Garamond) |
 | Noto Serif SC | Google、Adobe | SIL OFL 1.1 | 中文衬线字体 | [Google Fonts](https://fonts.google.com/noto/specimen/Noto+Serif+SC) |
 | YouTube IFrame Player API | Google | YouTube API 服务条款 | 巨幕嵌入播放电影片段 | [developers.google.com](https://developers.google.com/youtube/iframe_api_reference) |
@@ -26,4 +27,4 @@
 - 环境光：`src/stage/environment.js` 程序生成的音乐厅环境；如果本地放了 HDRI 则优先使用（见 `docs/assets-to-download.md`）。
 - 体积光、烟雾和浮尘：`src/stage/atmosphere.js` 自写着色器。
 
-需要登录才能下载的写实人物、动作捕捉动画和乐器模型，清单见 [`docs/assets-to-download.md`](docs/assets-to-download.md)，下载并接入后在上表登记。
+写实人物模型的加载管线已经就绪（`src/stage/humans/cast.js`、`modelRig.js`、`bake.js`）。需要登录才能下载的写实人物、动作捕捉动画和乐器模型，清单见 [`docs/assets-to-download.md`](docs/assets-to-download.md)，下载并接入后在上表登记。

@@ -8,11 +8,32 @@ import { aimBone, solveTwoBone } from './rig.js';
 const _v = new THREE.Vector3();
 const _p = new THREE.Vector3();
 const _d = new THREE.Vector3();
-const _q = new THREE.Quaternion();
-const _e = new THREE.Euler();
 
 /** 角色局部坐标 → 世界坐标 */
 export const toWorld = (rig, x, y, z, target = _v) => rig.root.localToWorld(target.set(x, y, z));
+
+const _pq = new THREE.Quaternion();
+const _dq = new THREE.Quaternion();
+const _ax = new THREE.Vector3();
+const _rootQ = new THREE.Quaternion();
+const AXIS_X = new THREE.Vector3(1, 0, 0);
+const AXIS_Y = new THREE.Vector3(0, 1, 0);
+const AXIS_Z = new THREE.Vector3(0, 0, 1);
+
+/**
+ * 绕"角色局部坐标"里的轴旋转一根骨骼（在它当前姿态的基础上叠加）。
+ * 不依赖骨骼自身的局部轴向，所以对程序化骨骼和 Mixamo 骨骼（各骨骼轴向各不相同）都成立。
+ */
+function turn(bone, axis, angle) {
+  if (!angle) return;
+  _ax.copy(axis).applyQuaternion(_rootQ);
+  bone.parent.getWorldQuaternion(_pq);
+  _dq.setFromAxisAngle(_ax, angle);
+  // 父骨骼坐标系里的增量：pq⁻¹ · 旋转 · pq
+  _dq.premultiply(_pq.clone().invert()).multiply(_pq);
+  bone.quaternion.premultiply(_dq);
+  bone.updateMatrixWorld(true);
+}
 
 /**
  * 摆身体（不含手臂）。
@@ -21,36 +42,43 @@ export const toWorld = (rig, x, y, z, target = _v) => rig.root.localToWorld(targ
  *   seat      座面高度（米）
  *   lean      身体前倾（弧度），bow 鞠躬（0~1）
  *   twist     上身左右扭转（弧度）
- *   headPitch / headYaw  低头 / 转头
+ *   headPitch / headYaw / headRoll  低头 / 转头 / 歪头
  *   walk      0~1 走路程度，phase 步伐相位
  *   breathe   呼吸相位（弧度），breatheAmp 幅度
+ *   keepUpper 为 true 时不重置上身（动作捕捉已经在这一帧驱动了脊柱和头），只叠加前倾等
  */
 export function poseBody(rig, s) {
   const B = rig.bones;
   const sit = s.sit ?? 0;
   const walk = (s.walk ?? 0) * (1 - sit);
   const phase = s.phase ?? 0;
-  rig.resetPose();
+  rig.resetPose(s.keepUpper);
+  rig.root.updateMatrixWorld(true);
+  rig.root.getWorldQuaternion(_rootQ);
 
-  // 骨盆：站立 0.94 米高；坐下时落到座面上，稍微往后
+  // 骨盆：站立时是模型自己的髋高；坐下时落到座面上，稍微往后
   const seat = s.seat ?? 0.46;
+  const hip = rig.hipHeight ?? 0.94;
   const bob = walk * Math.abs(Math.cos(phase)) * 0.025;
-  B.Hips.position.set(0, lerp(0.94, seat + 0.07, sit) + bob, lerp(0, -0.04, sit));
-  _e.set(lerp(0, -0.08, sit), (s.twist ?? 0) * 0.3 + walk * Math.sin(phase) * 0.06, 0);
-  B.Hips.quaternion.setFromEuler(_e);
+  const hipsWorld = toWorld(rig, 0, lerp(hip, seat + 0.07, sit) + bob, lerp(0, -0.04, sit), _p);
+  B.Hips.position.copy(B.Hips.parent.worldToLocal(hipsWorld));
+  B.Hips.updateMatrixWorld(true);
+  turn(B.Hips, AXIS_X, lerp(0, -0.08, sit));
+  turn(B.Hips, AXIS_Y, (s.twist ?? 0) * 0.3 + walk * Math.sin(phase) * 0.06);
 
   // 脊柱三节平分前倾和鞠躬，最上一节带呼吸
   const bend = (s.lean ?? 0) + (s.bow ?? 0) * 0.95;
   const breathe = Math.sin(s.breathe ?? 0) * (s.breatheAmp ?? 0.012);
   for (const [name, k, extra] of [['Spine', 0.3, 0], ['Spine1', 0.35, 0], ['Spine2', 0.35, breathe]]) {
-    _e.set(bend * k + extra, (s.twist ?? 0) * 0.35, 0);
-    B[name].quaternion.setFromEuler(_e);
+    if (!B[name]) continue;
+    turn(B[name], AXIS_X, bend * k + extra);
+    turn(B[name], AXIS_Y, (s.twist ?? 0) * 0.35);
   }
-  _e.set((s.headPitch ?? 0) * 0.4 - bend * 0.15, (s.headYaw ?? 0) * 0.4, 0);
-  B.Neck.quaternion.setFromEuler(_e);
-  _e.set((s.headPitch ?? 0) * 0.6, (s.headYaw ?? 0) * 0.6, (s.headRoll ?? 0));
-  B.Head.quaternion.setFromEuler(_e);
-  rig.root.updateMatrixWorld(true);
+  turn(B.Neck, AXIS_X, (s.headPitch ?? 0) * 0.4 - bend * 0.15);
+  turn(B.Neck, AXIS_Y, (s.headYaw ?? 0) * 0.4);
+  turn(B.Head, AXIS_X, (s.headPitch ?? 0) * 0.6);
+  turn(B.Head, AXIS_Y, (s.headYaw ?? 0) * 0.6);
+  turn(B.Head, AXIS_Z, s.headRoll ?? 0);
 
   // 双腿 IK：坐着时脚放在身前的地面上，站着时脚在髋部正下方，走路时交替迈步
   for (const [side, sx, ph] of [['Left', 1, 0], ['Right', -1, Math.PI]]) {
@@ -63,9 +91,23 @@ export function poseBody(rig, s) {
     const pole = toWorld(rig, sx * 0.1, lerp(0.5, 0.6, sit), 1.2, _d).clone();
     solveTwoBone(B[`${side}UpLeg`], B[`${side}Leg`], B[`${side}Foot`], target, pole);
     // 脚掌朝前、略微向下
-    const fwd = _d.set(0, -0.35 + walk * stride * 0.2, 1).applyQuaternion(rig.root.getWorldQuaternion(_q));
+    const fwd = _d.set(0, -0.35 + walk * stride * 0.2, 1).applyQuaternion(_rootQ);
     aimBone(B[`${side}Foot`], fwd);
   }
+}
+
+const _cq = new THREE.Quaternion();
+const _cp = new THREE.Vector3();
+const _cs = new THREE.Vector3();
+
+/**
+ * 胸腔坐标系：原点在脖子根部，朝向 = 上身相对静止姿态转过的角度，单位是米。
+ * 与骨骼自身的轴向和单位无关（Mixamo 骨骼带厘米缩放，轴向也和程序化骨骼不同），乐器就放在这个坐标系里。
+ */
+export function chestFrame(rig, out) {
+  rig.bones.Spine2.getWorldQuaternion(_cq).multiply(rig.chestRestInv);
+  rig.bones.Neck.getWorldPosition(_cp);
+  return out.compose(_cp, _cq, _cs.setScalar(rig.scale));
 }
 
 /**

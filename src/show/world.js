@@ -99,6 +99,13 @@ export class World {
     if (this.rig.mode === 'seat') this.rig.snapToSeat();
   }
 
+  /** 换成写实人物模型（演员表加载完成后调用，必须在演出开始前） */
+  useCast(cast) {
+    this.orchestra.useCast(cast);
+    this.conductor.useCast(cast);
+    this.stageLights.followSubject = this.conductor.body.position;
+  }
+
   start() {
     if (this.running) return;
     this.running = true;

@@ -10,6 +10,8 @@ import { damp, lerp, smoothstep, seededRandom } from '../core/math.js';
 import { STAGE_Y, PODIUM, PODIUM_HEIGHT } from './layout.js';
 import { Rig, aimBone } from './humans/rig.js';
 import { createLook, buildSkinnedBody } from './humans/body.js';
+import { ModelRig } from './humans/modelRig.js';
+import { pickCharacter } from './humans/cast.js';
 import { poseBody, poseArm, toWorld } from './humans/pose.js';
 
 const podiumMat = new THREE.MeshStandardMaterial({ color: 0x1b120c, roughness: 0.6 });
@@ -73,6 +75,24 @@ export class Conductor {
     this.walkPhase = 0;
     this.beat = 0;
     this.body.position.set(0, STAGE_Y, 0);
+  }
+
+  /** 换成写实模型（演员表里 roles 含 conductor 的人物） */
+  useCast(cast) {
+    const rig = new ModelRig(pickCharacter(cast, 'conductor', 'man', 0), 1, cast.clips.standIdle);
+    rig.root.position.copy(this.body.position);
+    rig.root.visible = this.body.visible;
+    this.group.remove(this.body);
+    this.rig = rig;
+    this.body = rig.root;
+    this.group.add(this.body);
+    // 指挥棒挂到新的右手上；模型骨骼带着厘米单位的缩放，要抵消掉
+    this.rig.root.updateMatrixWorld(true);
+    const hand = rig.bones.RightHand;
+    hand.add(this.baton);
+    const ws = hand.getWorldScale(new THREE.Vector3());
+    this.baton.scale.setScalar(1 / ws.x);
+    this.baton.position.set(0, 0, 0);
   }
 
   /** 瞬间放到某处（跳过环节时用） */
@@ -147,7 +167,9 @@ export class Conductor {
     this.body.rotation.set(0, this.yaw, 0);
 
     const conducting = this.pose === 'conduct';
+    const mocap = this.rig.animate?.(dt) && !this.walking && this.bow < 0.05;
     poseBody(this.rig, {
+      keepUpper: mocap,
       sit: 0,
       bow: this.bow,
       lean: conducting ? 0.04 + perf.intensity * 0.06 : 0.02,

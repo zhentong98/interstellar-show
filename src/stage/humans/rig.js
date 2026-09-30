@@ -46,6 +46,11 @@ const TIP_CHILD = {
 
 export const BONE_NAMES = SPEC.map(([name]) => name);
 
+/** 动作捕捉驱动上身时，这些骨骼不重置 */
+export const UPPER = new Set(['Spine', 'Spine1', 'Spine2', 'Neck', 'Head']);
+
+export { TIP_CHILD };
+
 export class Rig {
   /** @param {number} scale 身高缩放（个体差异） */
   constructor(scale = 1) {
@@ -69,10 +74,18 @@ export class Rig {
       if (tip) bone.userData.tip = this.bones[tip].position.clone();
     }
     this.root.updateMatrixWorld(true);
+    this.chestRestInv = this.bones.Spine2.getWorldQuaternion(new THREE.Quaternion()).invert();
   }
 
-  resetPose() {
+  /** 站立时髋部离地的高度（米，未乘个体缩放） */
+  get hipHeight() {
+    return 0.94;
+  }
+
+  /** 回到静止姿态；keepUpper 时保留上身（脊柱、脖子、头）当前的旋转 */
+  resetPose(keepUpper = false) {
     for (const bone of this.list) {
+      if (keepUpper && UPPER.has(bone.name)) continue;
       bone.quaternion.copy(bone.userData.restQuat);
       bone.position.copy(bone.userData.restPos);
     }

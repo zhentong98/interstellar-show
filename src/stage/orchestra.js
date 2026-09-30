@@ -17,7 +17,10 @@ import { damp, clamp01, lerp, seededRandom, range, smoothstep } from '../core/ma
 import { STAGE_Y, PODIUM, WINGS, ORGAN_CONSOLE } from './layout.js';
 import { Rig } from './humans/rig.js';
 import { createLook, buildSkinnedBody, Crowd } from './humans/body.js';
-import { poseBody, poseArm, restArms, toWorld } from './humans/pose.js';
+import { poseBody, poseArm, restArms, toWorld, chestFrame } from './humans/pose.js';
+import { ModelRig } from './humans/modelRig.js';
+import { pickCharacter } from './humans/cast.js';
+import { bakePose } from './humans/bake.js';
 import {
   violinGeometry, celloGeometry, bowGeometry, folderGeometry, malletGeometry,
   VIOLIN_POINTS, CELLO_SCALE, BOW, varnish, accessory,
@@ -103,8 +106,8 @@ function frame(origin, axis, up) {
 }
 
 const POSES = {
-  // 小提琴：演奏时在胸腔（Spine2）坐标里，夹在左肩、琴头指向左前方
-  violinPlay: frame([0.06, 0.13, 0.075], [0.55, 0.02, 0.83], [-0.35, 0.93, 0.1]),
+  // 小提琴：演奏时在胸腔坐标里（原点在脖子根部），夹在左肩、琴头指向左前方
+  violinPlay: frame([0.06, -0.02, 0.075], [0.55, 0.02, 0.83], [-0.35, 0.93, 0.1]),
   violinSeated: frame([0.14, 0.6, 0.3], [0, 1, 0.12], [-0.3, 0, 1]),
   violinStanding: frame([0.27, 0.4, 0.14], [0, 1, 0.1], [0, 0, 1]),
   bowSeated: frame([-0.17, 0.58, 0.3], [0, 1, 0.1], [0, -0.1, 1]),
@@ -131,6 +134,27 @@ function blend(out, a, b, k) {
 // ——— 乐手 ———
 
 const STRINGS = ['violin1', 'violin2', 'viola', 'cello', 'bass'];
+
+/** 声部 → 演员表里的角色类型 */
+const ROLE_OF = { violin1: 'strings', violin2: 'strings', viola: 'strings', cello: 'strings', bass: 'strings', choir: 'choir', timpani: 'timpani', organ: 'organ' };
+
+/** 后排烘焙：声部类别和各自需要的姿势（按顺序匹配第一个满足条件的） */
+const BAKE_KIND = { violin1: 'violin', violin2: 'violin', viola: 'viola', cello: 'cello', bass: 'bass', choir: 'choir' };
+const STRING_POSES = [
+  { name: 'sitPlay', sit: 1, raise: 1, test: (m) => m.sit > 0.5 && m.raise > 0.5 },
+  { name: 'sitRest', sit: 1, raise: 0, test: (m) => m.sit > 0.5 },
+  { name: 'stand', sit: 0, raise: 0, test: () => true },
+];
+const BAKE_POSES = {
+  violin: STRING_POSES,
+  viola: STRING_POSES,
+  cello: STRING_POSES,
+  bass: STRING_POSES,
+  choir: [
+    { name: 'sing', sit: 0, raise: 1, test: (m) => m.raise > 0.5 },
+    { name: 'stand', sit: 0, raise: 0, test: () => true },
+  ],
+};
 const BOWED_SMALL = ['violin1', 'violin2', 'viola'];
 
 export class Orchestra {
@@ -144,9 +168,10 @@ export class Orchestra {
       m: new THREE.Matrix4(), m2: new THREE.Matrix4(), m3: new THREE.Matrix4(),
       v: new THREE.Vector3(), v2: new THREE.Vector3(), v3: new THREE.Vector3(), v4: new THREE.Vector3(),
       q: new THREE.Quaternion(), s: new THREE.Vector3(1, 1, 1), zero: new THREE.Matrix4().makeScale(0, 0, 0),
-      turn: new THREE.Matrix4(), e: new THREE.Euler(),
+      turn: new THREE.Matrix4(), e: new THREE.Euler(), chest: new THREE.Matrix4(),
     };
 
+    this.writeInstrument = (name, slot, matrix) => this.parts[name].setMatrixAt(slot, matrix);
     this.musicians = this.#createMusicians();
     this.#buildBodies();
     this.#buildProps();
@@ -414,6 +439,104 @@ export class Orchestra {
     };
   }
 
+  // ——— 真实模型 ———
+
+  /**
+   * 换成写实人物模型（cast.js 加载的演员表）。
+   * 前排：每人一个带完整骨骼的模型，IK 驱动；后排：同一人物同一姿势只烘焙一次，做成 InstancedMesh。
+   */
+  useCast(cast) {
+    if (this.crowd) {
+      this.group.remove(this.crowd.group);
+      this.crowd = null;
+    }
+    const counters = {};
+    for (const m of this.musicians) {
+      if (m.front && m.rig?.root.parent) this.group.remove(m.rig.root);
+      const role = ROLE_OF[m.section];
+      counters[role] = (counters[role] ?? -1) + 1;
+      m.character = pickCharacter(cast, role, m.look.gender, counters[role]);
+      if (m.front) {
+        m.rig = new ModelRig(m.character, m.look.scale, cast.clips[m.seated ? 'sitIdle' : 'standIdle']);
+        m.rig.root.visible = m.present;
+        this.group.add(m.rig.root);
+      } else {
+        m.baked = true;
+        m.rig = null;
+      }
+    }
+    this.#buildBaked();
+  }
+
+  /** 后排：按（人物, 声部类别）分组，每组烘焙几个姿势 */
+  #buildBaked() {
+    this.bakedGroups = new Map();
+    for (const m of this.musicians.filter((x) => x.baked)) {
+      const kind = BAKE_KIND[m.section];
+      const key = `${m.character.file}|${kind}`;
+      if (!this.bakedGroups.has(key)) this.bakedGroups.set(key, { character: m.character, kind, members: [] });
+      const g = this.bakedGroups.get(key);
+      m.bakedGroup = g;
+      m.bakedIndex = g.members.length;
+      g.members.push(m);
+    }
+    for (const g of this.bakedGroups.values()) {
+      g.poses = {};
+      for (const pose of BAKE_POSES[g.kind]) {
+        const sample = g.members[0];
+        const rig = new ModelRig(g.character, 1);
+        const fake = {
+          ...sample, rig, pos: new THREE.Vector3(), yaw: 0, walk: 1, seat: new THREE.Vector3(), entry: new THREE.Vector3(),
+          sit: pose.sit, raise: pose.raise, lean: pose.raise * pose.sit * 0.1, bow: 0, stroke: 0, headYaw: 0, keepUpper: false,
+        };
+        this.#poseMusician(fake, 0, { playing: false, intensity: 0 });
+        const instruments = {};
+        this.#placeInstrument(fake, 0, { playing: false, intensity: 0 }, (name, slot, mat) => { instruments[name] = mat.clone(); });
+        const meshes = bakePose(rig).map(({ geometry, material }) => {
+          const mesh = new THREE.InstancedMesh(geometry, material, g.members.length);
+          mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+          mesh.castShadow = true;
+          mesh.receiveShadow = true;
+          mesh.frustumCulled = false;
+          this.group.add(mesh);
+          return mesh;
+        });
+        g.poses[pose.name] = { meshes, instruments };
+      }
+    }
+  }
+
+  /** 后排乐手每帧：选姿势，整体做轻微的摆动和鞠躬；乐器跟着同一个变换 */
+  #updateBaked(m, t) {
+    const { m: R, m2, v, q, s, zero } = this.tmp;
+    const g = m.bakedGroup;
+    const walking = m.walk > 0 && m.walk < 1;
+    const pose = BAKE_POSES[g.kind].find((p) => p.test(m))?.name ?? BAKE_POSES[g.kind][0].name;
+    if (m.present) {
+      const yaw = walking ? Math.atan2(m.seat.x - m.entry.x, m.seat.z - m.entry.z) : m.yaw;
+      const bob = walking ? Math.abs(Math.sin(t * 7 + m.phase)) * 0.03 : 0;
+      q.setFromAxisAngle(v.set(0, 1, 0), yaw);
+      R.compose(v.copy(m.pos).setY(m.pos.y + bob), q, s.setScalar(m.look.scale));
+      // 绕髋部前倾（演奏时的律动、鞠躬）
+      const pivot = m.sit > 0.5 ? 0.55 : 0.95;
+      m2.makeTranslation(0, pivot, 0).multiply(this.tmp.m3.makeRotationX(m.lean * 0.6 + m.bow * 0.7)).multiply(this.tmp.turn.makeTranslation(0, -pivot, 0));
+      R.multiply(m2);
+    }
+    for (const [name, p] of Object.entries(g.poses)) {
+      const on = m.present && name === pose;
+      for (const mesh of p.meshes) {
+        mesh.setMatrixAt(m.bakedIndex, on ? R : zero);
+        mesh.instanceMatrix.needsUpdate = true;
+      }
+      if (on) {
+        for (const [inst, local] of Object.entries(p.instruments)) {
+          if (m.slot[inst] !== undefined) this.parts[inst].setMatrixAt(m.slot[inst], m2.multiplyMatrices(R, local));
+        }
+      }
+    }
+    if (!m.present) this.#hideInstrument(m);
+  }
+
   // ——— 对外接口：导演调用 ———
 
   /** 乐手陆续从侧台走上来就位（大体上远处的先走），全部到位后 resolve */
@@ -535,12 +658,18 @@ export class Orchestra {
       m.headYaw = damp(m.headYaw, m.headTarget, 2, dt);
 
       m.visible = m.present;
-      if (m.skinned) m.rig.root.visible = m.present;
+      if (m.rig && m.front) m.rig.root.visible = m.present;
+      if (m.baked) {
+        this.#updateBaked(m, t);
+        continue;
+      }
       if (!m.present) {
         this.#hideInstrument(m);
         continue;
       }
       if (m.walk > 0 && m.walk < 1) m.walkPhase += dt * 7.5;
+      // 真实模型的上身动作捕捉（坐着的人用坐姿动作，站着的用站姿动作）
+      m.keepUpper = m.rig.animate ? m.rig.animate(dt) && (m.seated ? m.sit > 0.6 : m.sit < 0.4) : false;
       // 后排（实例化、离得远）隔帧更新姿态，省一半 CPU；走路时每帧都更新
       const walking = m.walk > 0 && m.walk < 1;
       if (!m.front && !walking && (m.index + this.frame) % 2 === 1 && m.posed) continue;
@@ -548,7 +677,7 @@ export class Orchestra {
       this.#poseMusician(m, t, perf);
       this.#placeInstrument(m, t, perf);
     }
-    this.crowd.update();
+    this.crowd?.update();
     this.#writePages();
     for (const p of Object.values(this.parts)) p.instanceMatrix.needsUpdate = true;
   }
@@ -573,6 +702,7 @@ export class Orchestra {
       phase: m.walkPhase,
       breathe: t * (choir ? 1.6 : 1.1) + m.phase,
       breatheAmp: choir && perf.playing ? 0.02 + 0.03 * perf.intensity : 0.01,
+      keepUpper: m.keepUpper,
     });
   }
 
@@ -590,8 +720,7 @@ export class Orchestra {
    * 乐器位置：放下（站/坐两种）和演奏位置之间按 raise 插值；
    * 双手的 IK 目标由乐器位置推出来，所以手永远握在琴颈、弓根上。
    */
-  #placeInstrument(m, t, perf) {
-    const P = this.parts;
+  #placeInstrument(m, t, perf, write = this.writeInstrument) {
     const rig = m.rig;
     const { m: M, m2, m3, v, v2, v3, v4 } = this.tmp;
     const root = rig.root.matrixWorld;
@@ -605,7 +734,7 @@ export class Orchestra {
       if (small) {
         blend(m2, POSES.violinStanding, POSES.violinSeated, m.sit);
         toW(m2, m3);
-        M.multiplyMatrices(rig.bones.Spine2.matrixWorld, POSES.violinPlay);
+        M.multiplyMatrices(chestFrame(rig, this.tmp.chest), POSES.violinPlay);
         blend(M, m3, M, m.raise);
         if (m.section === 'viola') M.scale(v.setScalar(1.12));
       } else {
@@ -613,7 +742,7 @@ export class Orchestra {
         toW(m2, M);
         if (bass) M.scale(v.setScalar(1.38));
       }
-      (small ? P.violin : P.cello).setMatrixAt(small ? m.slot.violin : m.slot.cello, M);
+      write(small ? 'violin' : 'cello', small ? m.slot.violin : m.slot.cello, M);
       const scaleK = small ? (m.section === 'viola' ? 1.12 : 1) : bass ? 1.38 : 1;
       const pts = small ? VIOLIN_POINTS : null;
       const neckLocal = small ? pts.neck : v.copy(VIOLIN_POINTS.neck).multiply(CELLO_SCALE);
@@ -636,7 +765,7 @@ export class Orchestra {
       blend(m3, POSES.bowStanding, POSES.bowSeated, m.sit);
       const bowRest = toW(m3, new THREE.Matrix4());
       const bowM = blend(new THREE.Matrix4(), bowRest, bowPlay, m.raise);
-      P.bow.setMatrixAt(m.slot.bow, bowM);
+      write('bow', m.slot.bow, bowM);
 
       // —— 双手 ——
       const left = neckW.clone().addScaledVector(instUp, -0.03 * scaleK);
@@ -651,7 +780,7 @@ export class Orchestra {
     if (m.section === 'choir') {
       blend(M, POSES.folderDown, POSES.folderUp, m.raise);
       toW(M, m2);
-      P.folder.setMatrixAt(m.slot.folder, m2);
+      write('folder', m.slot.folder, m2);
       const lh = v.set(0.14, 0, 0.01).applyMatrix4(m2).clone();
       const rh = v.set(-0.14, 0, 0.01).applyMatrix4(m2).clone();
       if (m.raise > 0.3) {
@@ -678,7 +807,7 @@ export class Orchestra {
         const x = v3.set(0, 1, 0).cross(z).normalize();
         const y = v4.crossVectors(z, x);
         M.makeBasis(x, y, z).setPosition(handPos);
-        P.mallet.setMatrixAt(hand, M);
+        write('mallet', hand, M);
         poseArm(rig, hand ? 'Left' : 'Right', handPos, toWorld(rig, sx * 0.6, 0.9, -0.2).clone());
       }
       return;

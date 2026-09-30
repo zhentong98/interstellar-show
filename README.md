@@ -11,8 +11,10 @@
   巨幕通过 YouTube 嵌入播放片段，声音来自片段本身。
 - 在节目单上勾选想听的曲目，按"入场"：进入全屏、隐藏鼠标，之后不需要任何操作。
   鼠标移到屏幕底部可以唤出控制条（下一首 / 结束演出）。
+- **写实人物**：把 Mixamo 绑好骨骼的模型放进 `public/models/` 并写好 `cast.json`，乐团和指挥会自动换成这些模型
+  （前排完整骨骼 + IK，后排烘焙姿势后实例化）；没有的话使用程序化人体。
 - **更写实的反射**：把 CC0 的音乐厅 HDRI 放到 `public/hdri/concert_hall.hdr`，页面会自动换上。
-  需要手动下载的素材清单见 [`docs/assets-to-download.md`](docs/assets-to-download.md)。
+  需要手动下载的素材清单和具体步骤见 [`docs/assets-to-download.md`](docs/assets-to-download.md)。
 - **本地增强版**（里程碑 3）：把你自己合法拥有的片段放到 `media/<slug>.mp4`（该目录不会被提交），
   乐手会跟着真实音频律动。
 
@@ -44,7 +46,7 @@ src/
   show/cueRunner.js   按播放时间插值强度、触发 flash / shake / drumHit
   show/post.js        后处理：Bloom + ACES，保留巨幕挖洞需要的 alpha
   stage/              音乐厅、巨幕（挖洞 + 幕布 + Gargantua）、乐团、指挥、观众、灯光、镜头
-  stage/humans/       人体骨骼（Mixamo 命名）、IK 姿态、程序化身体（前排蒙皮、后排实例化）
+  stage/humans/       人体骨骼（Mixamo 命名）、IK 姿态、程序化身体、写实模型加载（cast.js / modelRig.js / bake.js）
   stage/atmosphere.js 体积光束、烟雾、浮尘（经过银幕区域时自动淡出）
   video/              YouTube 播放器封装、模拟播放器、播放时钟（插值与异常判定）
   audio/sfx.js        原创合成音效：掌声、交谈、咳嗽、翻谱、调音（A = 440Hz）

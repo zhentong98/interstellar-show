@@ -19,6 +19,7 @@ import { ShowControls } from './ui/controls.js';
 import { DebugHud } from './ui/debugHud.js';
 import { enterFullscreen, exitFullscreen } from './ui/fullscreen.js';
 import { ceremony } from './cues/ceremony.js';
+import { loadCast } from './stage/humans/cast.js';
 
 const params = new URLSearchParams(window.location.search);
 
@@ -38,6 +39,15 @@ const audio = new ShowAudio();
 const controls = new ShowControls(document.getElementById('controls'));
 
 const programme = renderProgramme(document.getElementById('programme'), songs, { onEnter: enter });
+
+// 写实人物模型（public/models/cast.json）：加载完再允许入场；没有的话直接用程序化人体
+programme.setBusy('正在布置舞台…');
+loadCast()
+  .then((cast) => {
+    if (cast) world.useCast(cast);
+  })
+  .catch((err) => console.warn('人物模型加载失败，使用程序化人体', err))
+  .finally(() => programme.setBusy(null));
 
 function enter(setlist) {
   // 以下几步必须在点击事件的同步调用栈里完成：全屏、解锁 Web Audio、开始静音预载第一段
