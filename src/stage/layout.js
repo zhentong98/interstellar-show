@@ -55,3 +55,5 @@ export const rowFloorY = (row) => SEATING.baseY + (row - 1) * SEATING.rake;
 /** 观众的座位：第 8 排正中 */
 export const VIEW_ROW = 8;
 export const SEAT_EYE = new Vector3(0, rowFloorY(VIEW_ROW) + 1.25, rowZ(VIEW_ROW));
+/** 从坐到站，身体升高多少：观众起立和座位视角"跟着站起来"共用 */
+export const STAND_LIFT = 0.41;

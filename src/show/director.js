@@ -492,6 +492,7 @@ export class Director {
     world.stageLights.setMood('epic');
     world.stageLights.setFollow(true);
     world.audience.standUp(F.audienceStagger);
+    world.rig.standUp(F.viewerStand);
     background(world.rig.fly('finale', F.cameraDuration, tl, signal));
     world.conductor.setPose('rest');
     world.orchestra.setReady(false);
@@ -540,6 +541,7 @@ export class Director {
     const { world } = this;
     world.house.setAll(1);
     world.audience.standUp(0);
+    world.rig.standUp(0);
     world.orchestra.standUp();
     world.rig.snapToSeat();
     this.#stopSounds(1);
