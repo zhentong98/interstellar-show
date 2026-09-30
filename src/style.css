@@ -147,162 +147,371 @@ body {
 
 /* ——— 节目单 ——— */
 
+/*
+ * 配色取自黑洞 Gargantua：真空的黑、吸积盘的金、星光的白、玉米地尘土的灰褐、冷色的星空蓝。
+ * 片名用极细的宽体无衬线（接近电影海报的字标），其余文字用黑体。
+ */
 .programme {
+  --void: #000;
+  --accretion: #f2c27e;
+  --accretion-deep: #c8823f;
+  --starlight: #eee9e0;
+  --dust: #a39a8b;
+  --frost: #8a9bb0;
+  --wide: "Lexend Zetta", "Lexend", "Noto Sans SC", sans-serif;
+  --sans: "Lexend", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+
   position: fixed;
   inset: 0;
   z-index: 10;
   overflow-y: auto;
-  display: grid;
-  place-items: start center;
-  padding: clamp(16px, 6vh, 64px) 16px;
-  background:
-    radial-gradient(ellipse at 50% 12%, rgba(120, 78, 36, 0.35), transparent 60%),
-    radial-gradient(ellipse at 50% 100%, #150e09, #070504 70%);
+  overflow-x: hidden;
+  background: var(--void);
+  color: var(--starlight);
+  font-family: var(--sans);
+  font-weight: 300;
 }
 
-.programme.leaving {
-  pointer-events: none;
-  animation: programme-fade var(--leave, 1.2s) ease-in forwards;
+/* 黑洞画布：宽屏时在左半边，黑洞中心落在片名上方；边缘渐隐到黑色 */
+.pg-sky {
+  position: fixed;
+  left: -4vw;
+  top: -12vh;
+  width: 62vw;
+  height: 84vh;
+  -webkit-mask-image: radial-gradient(ellipse 50% 50% at 50% 50%, #000 55%, transparent 100%);
+  mask-image: radial-gradient(ellipse 50% 50% at 50% 50%, #000 55%, transparent 100%);
+  animation: pg-sky-in 2.4s ease-out both;
 }
 
-.programme.leaving .programme-card {
-  animation: programme-lower var(--leave, 1.2s) ease-in forwards;
+.pg-sky canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
-@keyframes programme-fade {
-  to {
-    background-color: transparent;
+@keyframes pg-sky-in {
+  from {
     opacity: 0;
   }
 }
 
-@keyframes programme-lower {
-  to {
-    transform: translateY(40vh) rotate(-2deg) scale(0.92);
-  }
+.pg-layout {
+  position: relative;
+  min-height: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(340px, 1fr);
+  grid-template-rows: 1fr auto auto auto;
+  grid-template-areas:
+    ".     list"
+    "hero  list"
+    "enter list"
+    "fine  fine";
+  column-gap: clamp(32px, 6vw, 110px);
+  padding: 32px clamp(24px, 6vw, 96px) 24px;
 }
 
-.programme-head {
-  text-align: center;
+.pg-hero {
+  grid-area: hero;
 }
 
-.display {
+.pg-title {
   margin: 0;
-  font-family: var(--serif-latin);
-  font-weight: 500;
-  font-size: clamp(30px, 7vw, 52px);
+  font-family: var(--wide);
+  font-weight: 200;
+  font-size: clamp(26px, 3.3vw, 54px);
   line-height: 1;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
-  /* 字距会在最后一个字母后多出一截，补回来保持居中 */
-  margin-right: -0.14em;
+  white-space: nowrap;
 }
 
-.subtitle {
-  margin: 12px 0 0;
-  font-family: var(--serif-cjk);
-  font-weight: 600;
-  font-size: 18px;
-  letter-spacing: 0.5em;
-  margin-right: -0.5em;
+.pg-subtitle {
+  margin: 18px 0 0;
+  font-size: 17px;
+  font-weight: 400;
+  letter-spacing: 0.32em;
 }
 
-.credit {
-  margin: 14px 0 0;
-  font-family: var(--serif-cjk);
+.pg-credit {
+  margin: 10px 0 0;
   font-size: 13px;
   letter-spacing: 0.12em;
-  color: var(--ink-soft);
+  color: var(--dust);
 }
 
-.ornament {
+/* ——— 今晚曲目 ——— */
+
+.pg-setlist {
+  grid-area: list;
+  align-self: center;
+  max-width: 520px;
+  width: 100%;
+}
+
+.pg-setlist h2 {
   display: flex;
-  align-items: center;
-  gap: 12px;
-  margin: 26px auto 0;
-  max-width: 240px;
-  font-size: 13px;
-  color: var(--gold);
+  align-items: baseline;
+  justify-content: space-between;
+  margin: 0 0 6px;
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: 0.3em;
 }
 
-.ornament span {
-  flex: 1;
-  height: 1px;
-  background: currentColor;
-  opacity: 0.6;
-}
-
-.section-note {
-  margin: 0 0 8px;
-  text-align: center;
-  font-family: var(--serif-cjk);
+.pg-count {
   font-size: 12px;
-  color: var(--ink-faint);
+  font-weight: 300;
+  letter-spacing: 0.1em;
+  color: var(--dust);
 }
 
-.setlist ol,
-.played {
+.pg-setlist ol {
   list-style: none;
   margin: 0;
   padding: 0;
 }
 
-.song label {
+.pg-song {
   display: grid;
-  grid-template-columns: 26px 40px 1fr;
+  grid-template-columns: 2.6em 1fr 16px;
   align-items: start;
-  gap: 4px 12px;
-  padding: 14px 6px;
-  border-bottom: 1px dotted rgba(107, 91, 73, 0.35);
+  column-gap: 12px;
+  padding: 13px 2px 12px;
+  border-top: 1px solid rgba(238, 233, 224, 0.1);
   cursor: pointer;
-  transition: opacity 0.25s;
+  transition: opacity 0.2s;
 }
 
-.song:last-child label {
-  border-bottom: 0;
-}
-
-.song input {
+.pg-song input {
   position: absolute;
   opacity: 0;
   pointer-events: none;
 }
 
-.tick {
-  width: 20px;
-  height: 20px;
-  margin-top: 6px;
-  border: 1.5px solid var(--ink);
-  transform: rotate(-2deg);
-  display: grid;
-  place-items: center;
+.pg-numeral {
+  padding-top: 3px;
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  color: var(--accretion);
 }
 
-.tick svg {
-  width: 20px;
-  height: 20px;
-  fill: none;
-  stroke: var(--ink);
-  stroke-width: 2.6;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-dasharray: 26;
-  stroke-dashoffset: 26;
-  transition: stroke-dashoffset 0.25s ease-out;
-  transform: translate(2px, -3px) rotate(-4deg);
+.pg-song-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
 }
 
-.song input:checked + .tick svg {
-  stroke-dashoffset: 0;
+.pg-song-title {
+  font-size: 20px;
+  line-height: 1.2;
+  font-weight: 300;
+  letter-spacing: 0.01em;
+  transition: color 0.2s;
 }
 
-.song input:focus-visible + .tick {
-  outline: 2px solid var(--gold);
-  outline-offset: 3px;
+.pg-song-scene {
+  font-size: 13.5px;
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  color: var(--dust);
 }
 
-.song label:has(input:not(:checked)) {
-  opacity: 0.45;
+.pg-song-source {
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+  color: var(--frost);
+}
+
+.programme .unofficial {
+  margin-left: 6px;
+  padding: 0 5px;
+  border: 1px solid rgba(138, 155, 176, 0.5);
+  border-radius: 2px;
+  font-style: normal;
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  color: var(--frost);
+}
+
+/* 选中的曲目：一颗亮着的金色小星；取消后变成空心的环，整行变暗 */
+.pg-mark {
+  width: 11px;
+  height: 11px;
+  margin-top: 7px;
+  justify-self: end;
+  border-radius: 50%;
+  border: 1px solid var(--dust);
+  transition: background 0.2s, border-color 0.2s, box-shadow 0.2s;
+}
+
+.pg-song input:checked ~ .pg-mark {
+  border-color: var(--accretion);
+  background: var(--accretion);
+  box-shadow: 0 0 10px rgba(242, 194, 126, 0.6);
+}
+
+.pg-song:has(input:not(:checked)) .pg-song-text,
+.pg-song:has(input:not(:checked)) .pg-numeral {
+  opacity: 0.38;
+}
+
+.pg-song:hover .pg-song-title {
+  color: var(--accretion);
+}
+
+.pg-song:has(input:focus-visible) {
+  outline: 1px solid var(--accretion);
+  outline-offset: 2px;
+}
+
+.pg-ensemble {
+  margin: 0;
+  padding-top: 14px;
+  border-top: 1px solid rgba(238, 233, 224, 0.1);
+  font-size: 12.5px;
+  letter-spacing: 0.1em;
+  color: var(--dust);
+}
+
+/* ——— 入场 ——— */
+
+.pg-enter {
+  grid-area: enter;
+  margin-top: 30px;
+}
+
+.enter {
+  font-family: var(--sans);
+  font-weight: 500;
+  font-size: 18px;
+  letter-spacing: 0.7em;
+  padding: 15px 44px 15px calc(44px + 0.7em);
+  color: #1a1206;
+  background: var(--accretion);
+  border: 0;
+  border-radius: 2px;
+  cursor: pointer;
+  box-shadow: 0 0 0 rgba(242, 194, 126, 0);
+  transition: background 0.2s, box-shadow 0.3s, transform 0.2s;
+}
+
+.enter:hover:not(:disabled) {
+  background: #f7d6a4;
+  box-shadow: 0 0 36px rgba(242, 194, 126, 0.35);
+}
+
+.enter:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.enter:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.enter:focus-visible {
+  outline: 1px solid var(--accretion);
+  outline-offset: 6px;
+}
+
+.enter-note {
+  margin: 14px 0 0;
+  max-width: 32em;
+  font-size: 12.5px;
+  line-height: 1.8;
+  color: var(--dust);
+}
+
+.pg-fineprint {
+  grid-area: fine;
+  margin: 28px 0 0;
+  font-size: 11px;
+  line-height: 1.7;
+  color: rgba(163, 154, 139, 0.7);
+}
+
+/* 入场：黑洞放大，像是坠了进去；文字先淡出 */
+.programme.leaving {
+  pointer-events: none;
+  animation: pg-fade var(--leave, 1.2s) ease-in forwards;
+}
+
+.programme.leaving .pg-layout {
+  animation: pg-fade calc(var(--leave, 1.2s) * 0.5) ease-in forwards;
+}
+
+.programme.leaving .pg-sky {
+  animation: pg-fall var(--leave, 1.2s) ease-in forwards;
+}
+
+@keyframes pg-fade {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes pg-fall {
+  to {
+    transform: scale(1.8);
+  }
+}
+
+/* 窄屏：黑洞在上方，片名、曲目依次往下；"入场"固定在底部 */
+@media (max-width: 860px) {
+  .pg-sky {
+    left: -20vw;
+    top: -10vh;
+    width: 140vw;
+    height: 62vh;
+  }
+
+  .pg-layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto;
+    grid-template-areas:
+      "hero"
+      "list"
+      "fine";
+    padding: 34vh 20px calc(150px + env(safe-area-inset-bottom));
+  }
+
+  .pg-setlist {
+    margin-top: 34px;
+    max-width: none;
+  }
+
+  .pg-enter {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 2;
+    margin: 0;
+    padding: 28px 20px max(16px, env(safe-area-inset-bottom));
+    text-align: center;
+    background: linear-gradient(to top, #000 62%, transparent);
+  }
+
+  .enter {
+    width: 100%;
+    max-width: 420px;
+  }
+
+  .enter-note {
+    margin: 10px auto 0;
+    font-size: 11.5px;
+    line-height: 1.6;
+  }
+}
+
+/* ——— 曲目行（节目单背面用） ——— */
+
+.played {
+  list-style: none;
+  margin: 0;
+  padding: 0;
 }
 
 .numeral {
@@ -364,20 +573,6 @@ body {
   vertical-align: middle;
 }
 
-.ensemble p {
-  margin: 8px 0 0;
-  text-align: center;
-  font-family: var(--serif-cjk);
-  font-size: 13.5px;
-  letter-spacing: 0.14em;
-}
-
-.programme-foot {
-  margin-top: 30px;
-  text-align: center;
-}
-
-.enter,
 .again {
   font-family: var(--serif-cjk);
   font-weight: 600;
@@ -392,35 +587,16 @@ body {
     0 0 0 1px var(--ink),
     0 0 0 4px var(--paper),
     0 0 0 5px rgba(34, 26, 19, 0.6);
-  transition: background 0.2s, transform 0.2s;
+  transition: background 0.2s;
 }
 
-.enter:hover:not(:disabled),
 .again:hover {
   background: #3b2c1f;
 }
 
-.enter:active:not(:disabled) {
-  transform: translateY(1px);
-}
-
-.enter:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
-}
-
-.enter:focus-visible,
 .again:focus-visible {
   outline: 2px solid var(--gold);
   outline-offset: 8px;
-}
-
-.enter-note {
-  margin: 20px 0 0;
-  font-family: var(--serif-cjk);
-  font-size: 12.5px;
-  line-height: 1.8;
-  color: var(--ink-soft);
 }
 
 /* ——— 演出中的控制条与提示 ——— */
@@ -636,16 +812,10 @@ body {
     inset: 10px;
   }
 
-  .song label {
-    grid-template-columns: 24px 30px 1fr;
-    gap: 4px 8px;
-  }
-
   .song-title {
     font-size: 22px;
   }
 
-  .enter,
   .again {
     letter-spacing: 0.5em;
     padding: 12px 28px 12px calc(28px + 0.5em);
@@ -657,7 +827,8 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .programme.leaving .programme-card,
+  .pg-sky,
+  .programme.leaving .pg-sky,
   .backpage-card {
     animation: none;
   }

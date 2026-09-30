@@ -3,6 +3,9 @@
 export const SERIF_LATIN = '"Cormorant Garamond", "EB Garamond", Georgia, serif';
 export const SERIF_CJK = '"Noto Serif SC", "Source Han Serif SC", "Songti SC", "STSong", serif';
 export const SERIF = `${SERIF_LATIN.replace(', serif', '')}, ${SERIF_CJK}`;
+// 节目单和巨幕标题卡的片名：极细的宽体无衬线；中文用黑体
+export const WIDE = '"Lexend Zetta", "Lexend", sans-serif';
+export const SANS_CJK = '"Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif';
 
 let loading = null;
 
@@ -14,6 +17,8 @@ export function fontsReady() {
     'italic 500 60px "Cormorant Garamond"',
     '400 48px "Noto Serif SC"',
     '600 48px "Noto Serif SC"',
+    '200 80px "Lexend Zetta"',
+    '300 48px "Noto Sans SC"',
   ];
   const all = Promise.all(wanted.map((f) => document.fonts?.load(f, 'Interstellar 星际穿越').catch(() => null)));
   loading = Promise.race([all, new Promise((r) => setTimeout(r, 4000))]);

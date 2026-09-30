@@ -11,13 +11,28 @@ export function enterFullscreen() {
 }
 
 export function exitFullscreen() {
-  if (!(document.fullscreenElement ?? document.webkitFullscreenElement)) return;
+  if (!isFullscreen()) return;
   const exit = document.exitFullscreen ?? document.webkitExitFullscreen;
   try {
     exit?.call(document)?.catch?.(() => {});
   } catch {
     // 忽略
   }
+}
+
+export function isFullscreen() {
+  return !!(document.fullscreenElement ?? document.webkitFullscreenElement);
+}
+
+/** 页面能不能全屏（iPhone Safari 不行） */
+export function canFullscreen() {
+  const el = document.documentElement;
+  return !!(el.requestFullscreen ?? el.webkitRequestFullscreen);
+}
+
+export function toggleFullscreen() {
+  if (isFullscreen()) exitFullscreen();
+  else enterFullscreen();
 }
 
 /** 演出中隐藏鼠标；控制条或提示出现时再显示 */

@@ -17,7 +17,7 @@ import { renderProgramme } from './ui/programme.js';
 import { renderBackPage } from './ui/backPage.js';
 import { ShowControls } from './ui/controls.js';
 import { DebugHud } from './ui/debugHud.js';
-import { enterFullscreen, exitFullscreen } from './ui/fullscreen.js';
+import { exitFullscreen } from './ui/fullscreen.js';
 import { ceremony } from './cues/ceremony.js';
 import { loadCast } from './stage/humans/cast.js';
 
@@ -53,8 +53,8 @@ loadCast()
   .finally(() => programme.setBusy(null));
 
 function enter(setlist) {
-  // 以下几步必须在点击事件的同步调用栈里完成：全屏、解锁 Web Audio、开始静音预载第一段
-  enterFullscreen();
+  // 以下几步必须在点击事件的同步调用栈里完成：解锁 Web Audio、开始静音预载第一段。
+  // 不自动全屏：观众想全屏时点控制条上的"全屏"
   audio.unlock();
 
   const director = new Director({
