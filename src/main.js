@@ -27,6 +27,9 @@ const world = new World(document.getElementById('show'));
 world.timeline.speed = Math.max(0.1, Number(params.get('speed')) || 1);
 world.screen.drawTitleCard();
 
+// Claude Artifact 预览版（VITE_PREVIEW_MOCK=1 构建）：页面拿不到网址参数，也不能嵌入 YouTube，默认用模拟播放器
+if (import.meta.env.VITE_PREVIEW_MOCK === '1' && !params.has('mock')) params.set('mock', '90');
+
 // 播放器在节目单阶段就开始加载，入场时已经就绪
 const player = params.has('mock')
   ? new MockScreenPlayer(world.screen.host, {

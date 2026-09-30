@@ -30,6 +30,13 @@ function loaders() {
 
 async function loadFile(l, file) {
   const url = BASE + file;
+  // Claude Artifact 预览版只能发布文本和常见网页文件：GLB 编成 base64 文本（*.glb.b64.txt）
+  if (/\.b64\.txt$/i.test(file)) {
+    const text = await (await fetch(url)).text();
+    const bytes = Uint8Array.from(atob(text.trim()), (c) => c.charCodeAt(0));
+    const g = await l.gltf.parseAsync(bytes.buffer, BASE);
+    return { scene: g.scene, animations: g.animations };
+  }
   if (/\.fbx$/i.test(file)) {
     const obj = await l.fbx.loadAsync(url);
     return { scene: obj, animations: obj.animations };
