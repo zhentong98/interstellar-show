@@ -1,6 +1,6 @@
 // 巨幕覆盖层的片元着色器。
 //
-// 这一层和 YouTube iframe 完全重合，用 NoBlending 直接写入颜色和 alpha：
+// 这一层和 YouTube iframe 完全重合，用 NoBlending 直接写入颜色和 alpha（线性颜色，交给后处理做色调映射）：
 //   alpha = 0 → WebGL 画布在这里"挖洞"，露出下面 CSS3D 层里的视频
 //   alpha = 1 → 盖住视频
 // 从下到上叠三层（预乘 alpha 的 over 合成）：
@@ -113,7 +113,8 @@ vec3 gargantua(vec2 uv, float t) {
            + mix(warm, hot, 0.45) * halo * 1.3
            + hot * ring;
   col = col * shadow + lum;
-  return 1.0 - exp(-col * 1.25); // 简单的曝光曲线，高光不会硬切
+  // 输出线性 HDR：吸积盘最亮处超过 1，经过 bloom 会晕开，再由 ACES 色调映射收住
+  return col * 1.5;
 }
 
 vec3 velvet(vec2 uv) {
@@ -128,7 +129,8 @@ void main() {
   float c = uCurtain;
   outc = vec4(velvet(vUv) * c, c) + outc * (1.0 - c);
   if (uCard > 0.001) {
-    vec3 card = texture2D(tCard, vUv).rgb;
+    // 标题卡贴图是 sRGB，转成线性再交给后处理的色调映射；略微提亮抵消 ACES 的压暗
+    vec3 card = pow(texture2D(tCard, vUv).rgb, vec3(2.2)) * 1.35;
     outc = vec4(card * uCard, uCard) + outc * (1.0 - uCard);
   }
   if (uGargantua > 0.001) {
