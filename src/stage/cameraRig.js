@@ -15,7 +15,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { damp, seededRandom } from '../core/math.js';
 import { ease } from '../core/timeline.js';
-import { SCREEN, STAGE_Y, SEAT_EYE, HALL, STAGE } from './layout.js';
+import { SCREEN, STAGE_Y, SEAT_EYE, HALL, STAGE, STAND_LIFT } from './layout.js';
 
 const v = (x, y, z) => new THREE.Vector3(x, y, z);
 const deg = THREE.MathUtils.radToDeg;
@@ -204,6 +204,8 @@ export class CameraRig {
     this.shakeOffset = new THREE.Vector3();
     this.rand = seededRandom(3);
     this.view = 'seat'; // 观众选的镜头
+    this.stand = 0; // 终场全场起立时，座位上的"我"也站起来（0 坐着 ~ 1 站着）
+    this.standAt = Infinity;
     this.auto = autoState();
     this.blend = null; // 切换镜头时的过渡
     this.onAir = false; // 开演前的转播镜头进行中（take 开始，回到座位时结束）
@@ -441,6 +443,14 @@ export class CameraRig {
     }
   }
 
+  /**
+   * 终场全场起立：delay 秒后"我"也站起来，座位视角的眼睛抬高 STAND_LIFT（和观众起立一样高），
+   * 前排站着的人不再挡住舞台。运镜路径同样抬高，飞回座位时不会突然跳一下。
+   */
+  standUp(delay = 0) {
+    this.standAt = Math.min(this.standAt, this.time + delay);
+  }
+
   /** 镜头震动：amount 约等于巨幕处的偏移米数 */
   addShake(amount) {
     this.shake = Math.min(0.6, this.shake + amount);
@@ -451,6 +461,7 @@ export class CameraRig {
     this.time += dt;
     const t = this.time;
     this.shake = damp(this.shake, 0, 3.5, dt);
+    this.stand = damp(this.stand, t >= this.standAt ? 1 : 0, 2.5, dt);
     const cam = this.camera;
 
     if (this.view === 'free') {
@@ -479,6 +490,7 @@ export class CameraRig {
     } else {
       pos.copy(this.pos);
       look.copy(this.target);
+      pos.y += STAND_LIFT * this.stand; // 全场起立时跟着站起来
       if (this.mode === 'broadcast') {
         // 开场转播镜头：视场角由镜头决定，加一点点手持式的晃动
         fov = this.takeFov ?? fov;

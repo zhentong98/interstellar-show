@@ -55,6 +55,8 @@ export const rowFloorY = (row) => SEATING.baseY + (row - 1) * SEATING.rake;
 /** 观众的座位：第 8 排正中 */
 export const VIEW_ROW = 8;
 export const SEAT_EYE = new Vector3(0, rowFloorY(VIEW_ROW) + 1.25, rowZ(VIEW_ROW));
+/** 从坐到站，身体升高多少：观众起立和座位视角"跟着站起来"共用 */
+export const STAND_LIFT = 0.41;
 
 /**
  * 木管：弦乐右侧、指挥正前方偏右的两排弧形台阶，以指挥台为圆心、面向指挥。标准坐法：前排长笛在左、双簧管在右，
@@ -64,7 +66,7 @@ export const SEAT_EYE = new Vector3(0, rowFloorY(VIEW_ROW) + 1.25, rowZ(VIEW_ROW
  *   - 指挥机位在 (1.2, 2.6, -5.0) 朝观众拍：x < 1.7 的前排座位要在 z < -5.35，乐手和乐器才不会进画面
  *   - 管风琴机位在 (2.7, 2.5, -7.0)，画面左沿贴着 z ≈ -7.1：后排台阶的后沿不能再往后
  *   - 合唱机位在 (2.0, 3.3, -4.8)，画面左下角：后排最右一人不超过 x ≈ 2.3
- *   - 前排最右一人从右侧台直线走过来要绕开定音鼓，不能再往右
+ *   - 前排最右一人和定音鼓之间要留出入场的过道（walkPaths.js 按道具的包围盒绕行）
  * 方位角 from/to 以指挥台为圆心（度，90° 是指挥正前方，越小越靠右）。
  */
 export const WOODWINDS = {
