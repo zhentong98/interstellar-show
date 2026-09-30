@@ -17,6 +17,7 @@ import { ModelRig } from './humans/modelRig.js';
 import { pickCharacter } from './humans/cast.js';
 import { poseBody, gripArm, toWorld } from './humans/pose.js';
 import { whiteMaterial } from './lightBudget.js';
+import { walkStride } from './walkPaths.js';
 
 const podiumMat = new THREE.MeshStandardMaterial({ color: 0x1b120c, roughness: 0.6 });
 // 白色木质指挥棒，按灯光预算的白色反照率上限取色，特写里不会发光
@@ -177,28 +178,35 @@ export class Conductor {
     this.pose = name;
   }
 
-  /** 沿路径走过去（直线段） */
+  /**
+   * 沿路径走过去：经过各个点的平滑曲线，起步、匀速、停步；步幅随步速加大，步伐按走过的距离推进。
+   * @param {THREE.Vector3[]} points 途经点（最后一个是终点）
+   */
   async walk(points, duration, timeline, signal) {
     this.body.visible = true;
-    const path = [this.body.position.clone(), ...points];
-    const lengths = path.slice(1).map((p, i) => p.distanceTo(path[i]));
-    const total = lengths.reduce((a, b) => a + b, 0) || 1;
-    this.walking = 1;
-    let last = 0;
+    const start = this.body.position.clone().setY(STAGE_Y);
+    const pts = [start, ...points.map((p) => p.clone().setY(STAGE_Y))].filter((p, i, a) => i === 0 || p.distanceTo(a[i - 1]) > 0.02);
+    if (pts.length < 2) return timeline.wait(duration, signal);
+    const curve = new THREE.CatmullRomCurve3(pts, false, 'centripetal');
+    const total = curve.getLength() || 1;
+    const gait = walkStride(total / Math.max(0.1, duration * 0.85));
+    const ramp = Math.min(0.25, 0.6 / duration); // 起步和停步各占的比例
+    const p = new THREE.Vector3();
+    const ahead = new THREE.Vector3();
+    this.walking = gait.amount;
     try {
       await timeline.animate(duration, (k) => {
-        let d = k * total;
-        this.walkPhase += (d - last) * 5.7; // 按走过的距离推进步伐
-        last = d;
-        let i = 0;
-        while (i < lengths.length - 1 && d > lengths[i]) d -= lengths[i++];
-        const a = path[i];
-        const b = path[i + 1];
-        const f = lengths[i] > 0 ? Math.min(1, d / lengths[i]) : 1;
+        const u = Math.min(1, Math.max(0, k));
+        curve.getPointAt(u, p);
+        this.walkPhase = u * total * gait.phasePerMeter;
         const y = this.body.position.y;
-        this.body.position.lerpVectors(a, b, f).setY(y);
-        if (lengths[i] > 0.05 && k < 1) this.yawTarget = Math.atan2(b.x - a.x, b.z - a.z);
-      }, { ease: (k) => smoothstep(0, 1, k), signal });
+        this.body.position.set(p.x, y, p.z);
+        // 朝向看前方 0.4 米：拐弯时提前转身
+        if (u < 0.999) {
+          curve.getPointAt(Math.min(1, u + 0.4 / total), ahead);
+          if (ahead.distanceToSquared(p) > 1e-4) this.yawTarget = Math.atan2(ahead.x - p.x, ahead.z - p.z);
+        }
+      }, { ease: (k) => rampEase(k, ramp), signal });
     } finally {
       this.walking = 0;
     }
@@ -404,6 +412,16 @@ export class Conductor {
     out.headPitch = -0.06 + 0.05 * ictus - 0.05 * cue;
     return out;
   }
+}
+
+/** 起步加速、匀速、停步减速（梯形速度），ramp 是加速段占的比例 */
+function rampEase(k, ramp) {
+  const v = 1 / (1 - ramp);
+  if (k <= 0) return 0;
+  if (k >= 1) return 1;
+  if (k < ramp) return (v * k * k) / (2 * ramp);
+  if (k > 1 - ramp) return 1 - (v * (1 - k) ** 2) / (2 * ramp);
+  return v * (k - ramp / 2);
 }
 
 /** 角度的指数趋近，走最短的方向 */
