@@ -63,15 +63,19 @@ const OPENING = {
     target: [v(-3.6, 1.5, -3.3), v(0.8, 1.8, -5.6), v(6.6, 2.1, -8.8)],
     fov: 42,
   },
-  // 调音：某一位乐手（首席、双簧管）的中近景，从他前方偏观众席一侧拍，慢慢推近
+  // 调音：某一位乐手（首席、双簧管）的中近景，慢慢推近。
+  // 站着的人从他前方偏观众席一侧拍；坐着的人正前方是谱架，改从观众席一侧的侧面稍高处拍，避开谱架
   portrait: (m) => {
     const fwd = v(Math.sin(m.yaw), 0, Math.cos(m.yaw));
-    const dir = fwd.clone().add(v(0, 0, 1)).normalize();
     const standing = m.sitTarget < 0.5;
-    const height = STAGE_Y + (standing ? 1.42 : 1.05);
+    const side = v(fwd.z, 0, -fwd.x);
+    if (side.z < 0) side.negate();
+    const dir = standing ? fwd.clone().add(v(0, 0, 1)).normalize() : side.addScaledVector(fwd, 0.35).normalize();
+    // 高度按座位算（木管坐在台阶上，座位比舞台面高）
+    const height = m.seat.y + (standing ? 1.42 : 1.05);
     // 机位按站起来（往前迈一步）之后的位置定；注视点跟着人走
     const at = m.seat.clone().addScaledVector(fwd, standing ? 0.4 : 0.12).setY(height);
-    const pos = at.clone().addScaledVector(dir, 2.5).setY(height + 0.18);
+    const pos = at.clone().addScaledVector(dir, 2.5).setY(height + (standing ? 0.18 : 0.4));
     return {
       pos: [pos, pos.clone().lerp(at, 0.07)],
       target: () => _follow.copy(m.pos).addScaledVector(fwd, 0.1).setY(height),
