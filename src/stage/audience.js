@@ -37,6 +37,8 @@ export class Audience {
   #template() {
     const rig = new Rig(1);
     poseBody(rig, { sit: 1 });
+    // aimBone 不再逐根刷新世界矩阵，直接读 matrixWorld 之前要先整体刷新一次，否则拿到的是站立的静止姿态
+    rig.root.updateMatrixWorld(true);
     this.tpl = {};
     for (const name of ['Spine2', 'Neck', 'Head']) this.tpl[name] = rig.bones[name].matrixWorld.clone();
   }
