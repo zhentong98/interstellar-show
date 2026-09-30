@@ -17,7 +17,8 @@ const deg = THREE.MathUtils.radToDeg;
 const PATHS = {
   // 入场：从大厅最后方的高处，滑过观众席回到第 8 排
   entrance: {
-    start: { pos: v(0, 8.2, 29), target: v(0, 7, -10) },
+    // 起点在后楼座栏杆的正前方（再往后会被楼座挡住），俯瞰亮着灯的池座
+    start: { pos: v(0, 7.4, 24.3), target: v(0, 4.5, -10) },
     pos: [v(0.8, 5.5, 21), v(0.3, 3.2, 13.5)],
     target: [v(0, 6, -12), v(0, 7.5, -12)],
   },
