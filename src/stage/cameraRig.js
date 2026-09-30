@@ -3,7 +3,7 @@
 // - 默认固定在第 8 排正中的"最佳座位"：巨幕在上方占画面大部分，乐团在下方三分之一，
 //   画面最下沿能看到前排观众的后脑勺
 // - 片段播放时几乎不动，只有极缓慢的呼吸式漂移；高潮时轻微震动
-// - 只有入场、换场、谢幕时才沿预设路径自由移动，最后总是回到座位
+// - 开演前像音乐会转播一样切镜头（OPENING：乐手上台、调音、熄灯、指挥上台），换场、谢幕时沿预设路径运镜，最后总是回到座位
 //
 // 观众也可以自己选镜头（控制条或数字键）：
 // - 固定机位：像音乐会转播一样对准指挥、小提琴、大提琴、定音鼓、管风琴、合唱团，镜头缓缓漂移
@@ -22,13 +22,6 @@ const deg = THREE.MathUtils.radToDeg;
 
 /** 运镜路径：起点是当前镜头，终点总是座位；这里只列中间的航点 */
 const PATHS = {
-  // 入场：从大厅最后方的高处，滑过观众席回到第 8 排
-  entrance: {
-    // 起点在后楼座栏杆的正前方（再往后会被楼座挡住），俯瞰亮着灯的池座
-    start: { pos: v(0, 7.4, 24.3), target: v(0, 4.5, -10) },
-    pos: [v(0.8, 5.5, 21), v(0.3, 3.2, 13.5)],
-    target: [v(0, 6, -12), v(0, 7.5, -12)],
-  },
   // 换场 A：推近左侧弦乐，再扫过左侧管风琴音管墙
   sweepLeft: {
     pos: [v(-2.6, 3.1, 4.2), v(-4.8, 5.2, 1.8), v(-2, 4, 6.5)],
@@ -39,12 +32,92 @@ const PATHS = {
     pos: [v(2.4, 3.0, 4.4), v(4.8, 5.4, 1.8), v(2, 4, 6.5)],
     target: [v(5, 2.4, -6), v(11, 11, -13), v(1, 8, -13)],
   },
-  // 谢幕：缓缓推近舞台，停一会儿再退回座位
+  // 谢幕：缓缓推近舞台，停一会儿再退回座位。
+  // 观众这时已经起立（站着的头顶约 2.4 米）：镜头升到 3.8 米左右从他们头顶上方越过去，乐团和指挥不被挡住
   finale: {
-    pos: [v(0, 2.7, 6.8), v(0, 2.7, 6.2)],
-    target: [v(0, 4.5, -8), v(0, 5, -8)],
+    pos: [v(0, 3.9, 7.6), v(0, 3.7, 6.4)],
+    target: [v(0, 3.9, -8), v(0, 4.3, -8)],
   },
 };
+
+/**
+ * 开场转播：观众坐在座位上（或开着自动导播）时，开演前的仪式像音乐会转播一样切镜头，最后回到第 8 排开演。
+ * 导演按仪式的节奏调用 take()，每个镜头的时长由 src/cues/ceremony.js 决定。
+ *
+ * 每个镜头 { pos, target, fov }：
+ *   - 一个点：固定机位（带一点摇臂式的漂移）
+ *   - 一串点：在这个镜头的时长里沿曲线运镜
+ *   - 函数：每帧取值（跟拍走动的人），镜头平滑地追过去
+ *   fov 是数值或 [起, 止]。定义本身也可以是函数，参数是要拍的人（乐手或指挥的位置）。
+ */
+const OPENING = {
+  // 入场：从后楼座栏杆前的高处俯瞰亮着灯的池座，滑过观众头顶推向舞台，两侧入口的乐手正鱼贯而入
+  establish: {
+    pos: [v(0, 7.4, 24.3), v(0.7, 5.9, 19), v(0.5, 4.5, 12.8)],
+    target: [v(0, 4.5, -10), v(0, 3.5, -8), v(-0.8, 2.4, -5)],
+    fov: [46, 40],
+  },
+  // 乐手落座：台口前的低机位从左往右横移，先看弦乐沿各排窄道走进去、转身坐下，再摇到合唱团一层层走上台阶
+  walkOn: {
+    pos: [v(-7.4, 3.1, 2.7), v(-2.6, 3.0, 2.5), v(2.4, 3.1, 1.9)],
+    target: [v(-3.6, 1.5, -3.3), v(0.8, 1.8, -5.6), v(6.6, 2.1, -8.8)],
+    fov: 42,
+  },
+  // 调音：某一位乐手（首席、双簧管）的中近景，从他前方偏观众席一侧拍，慢慢推近
+  portrait: (m) => {
+    const fwd = v(Math.sin(m.yaw), 0, Math.cos(m.yaw));
+    const dir = fwd.clone().add(v(0, 0, 1)).normalize();
+    const standing = m.sitTarget < 0.5;
+    const height = STAGE_Y + (standing ? 1.42 : 1.05);
+    // 机位按站起来（往前迈一步）之后的位置定；注视点跟着人走
+    const at = m.seat.clone().addScaledVector(fwd, standing ? 0.4 : 0.12).setY(height);
+    const pos = at.clone().addScaledVector(dir, 2.5).setY(height + 0.18);
+    return {
+      pos: [pos, pos.clone().lerp(at, 0.07)],
+      target: () => _follow.copy(m.pos).addScaledVector(fwd, 0.1).setY(height),
+      fov: 24,
+    };
+  },
+  // 全团调音：从右前方稍高处斜拍整个弦乐区，琴都架起来、弓子来回
+  tutti: {
+    pos: [v(1.7, 3.7, 1.3), v(1.2, 3.45, 0.5)],
+    target: v(-3.0, 1.6, -3.7),
+    fov: 42,
+  },
+  // 熄灯：左侧楼座前沿的大全景，池座的灯从后往前一排排暗下去
+  house: {
+    pos: [v(-11.0, 7.9, 17.6), v(-10.5, 7.6, 16.4)],
+    target: [v(0.6, 2.6, -4.2), v(0.4, 2.5, -4)],
+    fov: 46,
+  },
+  // 指挥上台：斯坦尼康跟在他左后方，越过他的肩膀看过去，前方是已经坐好的乐团
+  conductorWalk: (p) => ({
+    pos: () => _cam.copy(p).add(_ofs.set(-2.7, 1.35, 2.2)).setX(Math.max(-HALL.halfWidth + 1, p.x - 2.7)),
+    target: () => _follow.copy(p).add(_ofs.set(1.9, 1.15, -0.7)),
+    fov: 36,
+  }),
+  // 握手：两个人的侧面中景（机位在他们连线的垂直方向、观众席一侧），然后跟着指挥走上指挥台
+  handshake: ({ conductor: p, partner }) => {
+    const mid = p.clone().lerp(partner, 0.5);
+    const side = v(partner.z - p.z, 0, p.x - partner.x).normalize();
+    if (side.z < 0) side.negate();
+    const pos = mid.clone().addScaledVector(side, 3.4).setY(STAGE_Y + 1.55);
+    return {
+      pos: [pos, pos.clone().add(v(0.5, 0, 0))],
+      target: () => _follow.copy(p).lerp(partner, 0.35).setY(STAGE_Y + 1.4),
+      fov: 30,
+    };
+  },
+  // 鞠躬：台前正面的中景，指挥身后是整个乐团
+  bow: {
+    pos: [v(0.55, 2.35, 3.1), v(0.45, 2.4, 2.75)],
+    target: v(0, 2.42, -1.6),
+    fov: 22,
+  },
+};
+const _follow = new THREE.Vector3();
+const _cam = new THREE.Vector3();
+const _ofs = new THREE.Vector3();
 
 /**
  * 固定机位：位置、看向的点、视场角（度）。
@@ -100,6 +173,17 @@ const AUTO = {
   pushIn: 0.06, // 每个镜头停留期间慢慢推近的比例
 };
 const lerpPair = ([calm, loud], k) => calm + (loud - calm) * k;
+
+/** 镜头定义里的 pos / target → (k, out) => out：一个点、一串点（沿曲线）、或每帧取值的函数 */
+function track(spec) {
+  if (typeof spec === 'function') return (k, out) => out.copy(spec(k));
+  if (Array.isArray(spec)) {
+    const curve = new THREE.CatmullRomCurve3(spec, false, 'centripetal');
+    return (k, out) => curve.getPoint(k, out);
+  }
+  return (k, out) => out.copy(spec);
+}
+const _aim = new THREE.Vector3();
 const autoState = (left = 4) => ({ shot: 'seat', left, elapsed: 0, hold: left, recent: [], idle: 0, locked: false });
 
 const MOVE_KEYS = {
@@ -122,6 +206,7 @@ export class CameraRig {
     this.view = 'seat'; // 观众选的镜头
     this.auto = autoState();
     this.blend = null; // 切换镜头时的过渡
+    this.onAir = false; // 开演前的转播镜头进行中（take 开始，回到座位时结束）
     this.keys = new Set();
     this.fitToAspect(camera.aspect);
     this.snapToSeat();
@@ -162,8 +247,13 @@ export class CameraRig {
     }
     this.blend = { k: 0, pos: cam.position.clone(), target: (this.lookAt ?? this.target).clone(), fov: cam.fov };
     this.auto = autoState();
-    if (id === 'seat' || id === 'auto') this.snapToSeat(true);
-    else this.mode = 'shot';
+    // 开演前的转播还没结束：回到座位或自动导播时接着看转播镜头（下一帧由 take 接管），不跳回座位
+    if (id === 'seat' || id === 'auto') {
+      if (this.onAir) this.mode = 'broadcast';
+      else this.snapToSeat(true);
+    } else {
+      this.mode = 'shot';
+    }
   }
 
   /** 当前实际使用的镜头：自动导播时是导播选中的机位，其余就是观众选的 */
@@ -264,21 +354,71 @@ export class CameraRig {
     this.seat.target.set(eye.x, eye.y + Math.tan(pitch) * toScreen, SCREEN.center.z);
   }
 
-  /** 回到座位。观众选了别的镜头时（force 除外）保持观众的选择 */
+  /** 回到座位。观众选了别的镜头时（force 除外）保持观众的选择；正在进行的开场转播镜头就此停下 */
   snapToSeat(force = false) {
+    this.takeId = (this.takeId ?? 0) + 1;
+    this.onAir = false;
     if (this.active !== 'seat' && !force) return;
     this.mode = 'seat';
     this.pos.copy(this.seat.position);
     this.target.copy(this.seat.target);
   }
 
-  /** 把镜头放到某条路径的起点（入场前） */
-  placeAt(name) {
-    const start = PATHS[name]?.start;
-    if (!start || this.active !== 'seat') return;
-    this.mode = 'path';
-    this.pos.copy(start.pos);
-    this.target.copy(start.target);
+  /**
+   * 开场转播的一个镜头（见 OPENING）：硬切过去，在 duration 秒里按镜头定义运镜或跟拍。
+   * 观众选了座位和自动导播以外的镜头时不抢镜头，只占用同样的时长，演出节奏不变；中途切回座位或自动导播就接着拍。
+   * @param {string} name OPENING 里的镜头
+   * @param {*} [subject] 要拍的人（乐手，或者指挥的位置），传给镜头定义
+   */
+  async take(name, duration, timeline, signal, subject) {
+    const def = typeof OPENING[name] === 'function' ? OPENING[name](subject) : OPENING[name];
+    const id = ++this.takeId;
+    this.onAir = true;
+    const pos = track(def.pos);
+    const target = track(def.target);
+    const fov = Array.isArray(def.fov) ? def.fov : [def.fov, def.fov];
+    const follow = typeof def.target === 'function';
+    const carry = typeof def.pos === 'function';
+    let last = timeline.time;
+    let first = true;
+    // 跟拍：像摄像师一样平滑地追着人（机位和注视点都带一点延迟）
+    const chase = (out, aim, lambda, dt) => out.set(
+      damp(out.x, aim.x, lambda, dt), damp(out.y, aim.y, lambda, dt), damp(out.z, aim.z, lambda, dt));
+    const apply = (k) => {
+      if (id !== this.takeId || this.active !== 'seat') return; // 观众在看别的机位：只占用时长
+      const dt = Math.max(0, timeline.time - last);
+      last = timeline.time;
+      if (carry && !first) chase(this.pos, pos(k, _aim), 3, dt);
+      else pos(k, this.pos);
+      if (follow && !first) chase(this.target, target(k, _aim), 5, dt);
+      else target(k, this.target);
+      this.takeFov = fov[0] + (fov[1] - fov[0]) * k;
+      this.mode = 'broadcast';
+      first = false;
+    };
+    if (this.active === 'seat') this.blend = null; // 硬切
+    apply(0);
+    await timeline.animate(duration, apply, { ease: def.ease ?? ease.sine, signal });
+  }
+
+  /** 开场转播的最后一个镜头：从当前画面平滑地退回第 8 排座位 */
+  async returnToSeat(duration, timeline, signal) {
+    if (this.active !== 'seat' || this.mode !== 'broadcast') {
+      this.snapToSeat();
+      return timeline.wait(duration, signal);
+    }
+    const id = ++this.takeId;
+    const from = { pos: this.pos.clone(), target: this.target.clone(), fov: this.takeFov };
+    try {
+      await timeline.animate(duration, (k) => {
+        if (id !== this.takeId || this.active !== 'seat') return;
+        this.pos.lerpVectors(from.pos, this.seat.position, k);
+        this.target.lerpVectors(from.target, this.seat.target, k);
+        this.takeFov = from.fov + (this.seatFov - from.fov) * k;
+      }, { ease: ease.inOut, signal });
+    } finally {
+      if (id === this.takeId) this.snapToSeat();
+    }
   }
 
   /** 沿预设路径运镜，结束时回到座位 */
@@ -339,7 +479,13 @@ export class CameraRig {
     } else {
       pos.copy(this.pos);
       look.copy(this.target);
-      if (this.mode === 'seat') {
+      if (this.mode === 'broadcast') {
+        // 开场转播镜头：视场角由镜头决定，加一点点手持式的晃动
+        fov = this.takeFov ?? fov;
+        pos.x += Math.sin(t * 0.43) * 0.012;
+        pos.y += Math.sin(t * 0.31 + 0.7) * 0.008;
+        look.x += Math.sin(t * 0.27 + 1.9) * 0.015;
+      } else if (this.mode === 'seat') {
         // 呼吸式漂移：几厘米、十几秒一个周期
         pos.x += Math.sin(t * 0.37) * 0.012;
         pos.y += Math.sin(t * 0.23 + 1.3) * 0.01;
