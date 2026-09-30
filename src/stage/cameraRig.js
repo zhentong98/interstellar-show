@@ -8,7 +8,8 @@
 // 观众也可以自己选镜头（控制条或数字键）：
 // - 固定机位：像音乐会转播一样对准指挥、小提琴、大提琴、定音鼓、管风琴、合唱团，镜头缓缓漂移
 // - 自由移动：鼠标拖动转视角、滚轮推拉、右键平移、WASD / 方向键移动；手机单指转、双指缩放
-// 选了座位以外的镜头后，入场、换场、谢幕的自动运镜让位给观众的选择。
+// - 自动导播：演奏时按音乐的起伏自动切机位，像电视转播；不演奏时交给入场、换场、谢幕的预设运镜
+// 选了座位和自动导播以外的镜头后，入场、换场、谢幕的自动运镜让位给观众的选择。
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -62,6 +63,7 @@ export const SHOTS = {
 /** 观众能选的全部镜头（按控制条上的顺序） */
 export const VIEWS = [
   { id: 'seat', label: '座位', key: '1' },
+  { id: 'auto', label: '自动导播', key: '0' },
   ...Object.entries(SHOTS).map(([id, s]) => ({ id, label: s.label, key: s.key })),
   { id: 'free', label: '自由移动', key: 'F' },
 ];
@@ -71,6 +73,22 @@ const FREE_BOUNDS = new THREE.Box3(
   v(-HALL.halfWidth + 0.8, STAGE_Y + 0.3, STAGE.back + 0.8),
   v(HALL.halfWidth - 0.8, HALL.height - 1.5, HALL.back - 1),
 );
+/**
+ * 自动导播：各机位被选中的权重（安静段落 / 激烈段落之间插值）和停留时长（秒）。
+ * 座位视角能看到电影画面，停得最久、选得最多；特写短一些。
+ */
+const AUTO = {
+  weights: {
+    seat: [4, 3], wide: [1.5, 2.5], conductor: [2, 2], violins: [2, 1.5],
+    cellos: [1.5, 1.5], timpani: [0.3, 1.5], organ: [1, 1], choir: [1, 1.5],
+  },
+  seatHold: [13, 8],
+  shotHold: [7, 4],
+  drumLead: 1.8, // 定音鼓：击打前多久切过去，击打后再停一会儿
+  flashHold: 4.5,
+  pushIn: 0.06, // 每个镜头停留期间慢慢推近的比例
+};
+
 const MOVE_KEYS = {
   KeyW: [0, 1], ArrowUp: [0, 1], KeyS: [0, -1], ArrowDown: [0, -1],
   KeyA: [-1, 0], ArrowLeft: [-1, 0], KeyD: [1, 0], ArrowRight: [1, 0],
@@ -89,6 +107,7 @@ export class CameraRig {
     this.shakeOffset = new THREE.Vector3();
     this.rand = seededRandom(3);
     this.view = 'seat'; // 观众选的镜头
+    this.auto = { shot: 'seat', left: 4, elapsed: 0, hold: 4, recent: [] };
     this.blend = null; // 切换镜头时的过渡
     this.keys = new Set();
     this.fitToAspect(camera.aspect);
@@ -116,7 +135,7 @@ export class CameraRig {
 
   /** 切换镜头：座位、固定机位或自由移动；过渡约 1.8 秒 */
   setView(id) {
-    if (id === this.view || !(id === 'seat' || (id === 'free' && this.orbit) || SHOTS[id])) return;
+    if (id === this.view || !(id === 'seat' || id === 'auto' || (id === 'free' && this.orbit) || SHOTS[id])) return;
     const cam = this.camera;
     this.view = id;
     if (this.orbit) this.orbit.enabled = id === 'free';
@@ -129,6 +148,55 @@ export class CameraRig {
       return;
     }
     this.blend = { k: 0, pos: cam.position.clone(), target: (this.lookAt ?? this.target).clone(), fov: cam.fov };
+    this.auto = { shot: 'seat', left: 4, elapsed: 0, hold: 4, recent: [] };
+    if (id === 'seat' || id === 'auto') this.snapToSeat(true);
+    else this.mode = 'shot';
+  }
+
+  /** 当前实际使用的镜头：自动导播时是导播选中的机位，其余就是观众选的 */
+  get active() {
+    return this.view === 'auto' ? this.auto.shot : this.view;
+  }
+
+  /** 自动导播：演奏时按强度和一次性事件切镜头；不演奏时回到座位，让预设运镜接管 */
+  #direct(dt, perf) {
+    const a = this.auto;
+    if (!perf?.playing) {
+      if (a.shot !== 'seat') this.#cut('seat', 4);
+      a.left = Math.max(a.left, 4); // 开演后先在座位看几秒电影
+      return;
+    }
+    const k = Math.min(1, Math.max(0, perf.intensity ?? 0));
+    for (const ev of perf.events ?? []) {
+      if (ev.type === 'drumHit' && a.shot !== 'timpani') return this.#cut('timpani', (ev.lead ?? 0) + AUTO.drumLead);
+      if (ev.type === 'flash') return this.#cut(a.shot === 'wide' ? 'seat' : 'wide', AUTO.flashHold);
+    }
+    a.elapsed += dt;
+    a.left -= dt;
+    if (a.left > 0) return;
+    // 按权重挑下一个机位，不重复最近用过的两个
+    const pool = Object.entries(AUTO.weights).filter(([id]) => id !== a.shot && !a.recent.includes(id));
+    let r = this.rand() * pool.reduce((sum, [, w]) => sum + w[0] + (w[1] - w[0]) * k, 0);
+    let next = pool[0][0];
+    for (const [id, w] of pool) {
+      r -= w[0] + (w[1] - w[0]) * k;
+      if (r <= 0) {
+        next = id;
+        break;
+      }
+    }
+    const [calm, loud] = next === 'seat' ? AUTO.seatHold : AUTO.shotHold;
+    this.#cut(next, (calm + (loud - calm) * k) * (0.85 + this.rand() * 0.3));
+  }
+
+  /** 导播硬切到某个机位 */
+  #cut(id, hold) {
+    const a = this.auto;
+    a.recent = [a.shot, ...a.recent].slice(0, 2);
+    a.shot = id;
+    a.left = a.hold = hold;
+    a.elapsed = 0;
+    this.blend = null;
     if (id === 'seat') this.snapToSeat(true);
     else this.mode = 'shot';
   }
@@ -159,7 +227,7 @@ export class CameraRig {
 
   /** 回到座位。观众选了别的镜头时（force 除外）保持观众的选择 */
   snapToSeat(force = false) {
-    if (this.view !== 'seat' && !force) return;
+    if (this.active !== 'seat' && !force) return;
     this.mode = 'seat';
     this.pos.copy(this.seat.position);
     this.target.copy(this.seat.target);
@@ -168,7 +236,7 @@ export class CameraRig {
   /** 把镜头放到某条路径的起点（入场前） */
   placeAt(name) {
     const start = PATHS[name]?.start;
-    if (!start || this.view !== 'seat') return;
+    if (!start || this.active !== 'seat') return;
     this.mode = 'path';
     this.pos.copy(start.pos);
     this.target.copy(start.target);
@@ -177,7 +245,7 @@ export class CameraRig {
   /** 沿预设路径运镜，结束时回到座位 */
   async fly(name, duration, timeline, signal) {
     // 观众选了别的镜头：不抢镜头，只占用同样的时长，演出节奏不变
-    if (this.view !== 'seat') return timeline.wait(duration, signal);
+    if (this.active !== 'seat') return timeline.wait(duration, signal);
     const def = PATHS[name];
     const posCurve = new THREE.CatmullRomCurve3([this.pos.clone(), ...def.pos, this.seat.position.clone()], false, 'centripetal');
     const tgtCurve = new THREE.CatmullRomCurve3([this.target.clone(), ...def.target, this.seat.target.clone()], false, 'centripetal');
@@ -185,7 +253,7 @@ export class CameraRig {
     try {
       await timeline.animate(duration, (k) => {
         // 运镜途中观众切了镜头：停止跟随路径
-        if (this.view !== 'seat') return;
+        if (this.active !== 'seat') return;
         posCurve.getPoint(k, this.pos);
         tgtCurve.getPoint(k, this.target);
       }, { ease: ease.sine, signal });
@@ -199,7 +267,8 @@ export class CameraRig {
     this.shake = Math.min(0.6, this.shake + amount);
   }
 
-  update(dt) {
+  /** @param {object} [perf] 当前的演奏数据（自动导播用） */
+  update(dt, perf) {
     this.time += dt;
     const t = this.time;
     this.shake = damp(this.shake, 0, 3.5, dt);
@@ -211,11 +280,13 @@ export class CameraRig {
       return;
     }
 
+    if (this.view === 'auto') this.#direct(dt, perf);
+
     // 期望的镜头：座位 / 入场等运镜路径 / 固定机位
     const pos = this.tmpPos ??= new THREE.Vector3();
     const look = this.tmpLook ??= new THREE.Vector3();
     let fov = this.seatFov;
-    const shot = SHOTS[this.view];
+    const shot = SHOTS[this.active];
     if (shot) {
       // 转播式的缓慢漂移：镜头像架在摇臂上，轻轻地左右、上下移动
       pos.copy(shot.pos);
@@ -224,6 +295,8 @@ export class CameraRig {
       look.copy(shot.target);
       look.x += Math.sin(t * 0.09 + 0.6) * 0.06;
       fov = shot.fov;
+      // 导播切过来的镜头在停留期间慢慢推近
+      if (this.view === 'auto') pos.lerp(look, AUTO.pushIn * Math.min(1, this.auto.elapsed / this.auto.hold));
     } else {
       pos.copy(this.pos);
       look.copy(this.target);

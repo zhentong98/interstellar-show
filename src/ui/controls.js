@@ -92,7 +92,11 @@ export class ShowControls {
     const current = this.rig.view;
     for (const b of this.views.querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.view === current));
     clearTimeout(this.hintTimer);
-    this.hint.hidden = current !== 'free';
+    this.hint.hidden = current !== 'free' && current !== 'auto';
+    if (current === 'auto') {
+      this.hint.textContent = '自动导播：演奏时跟着音乐切换机位 · 按 1 回到座位';
+      this.hintTimer = setTimeout(() => { this.hint.hidden = true; }, 4000);
+    }
     if (current === 'free') {
       const touch = matchMedia('(pointer: coarse)').matches;
       this.hint.textContent = touch
@@ -105,6 +109,8 @@ export class ShowControls {
 
   setStatus(text) {
     this.status.textContent = text;
+    // 开演前"下一首"就是跳过开场，直接开始第一首
+    this.bar.querySelector('[data-action=next]').textContent = this.director?.phase === 'preshow' ? '跳过开场' : '下一首';
   }
 
   #handlePointer(y, hold = 1200) {

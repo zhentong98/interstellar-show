@@ -179,7 +179,7 @@ export class World {
     this.orchestra.update(dt, perf);
     this.conductor.update(dt, perf);
     this.audience.update(dt);
-    this.rig.update(dt);
+    this.rig.update(dt, perf);
     this.#updateScreenMask();
     // 音管自发光（底光打上去的效果）
     hallMaterials.pipeMetal.emissive.copy(this.stageLights.pipeColor);
