@@ -106,7 +106,15 @@ export async function loadCast() {
     }
   }
   const clips = {};
-  for (const [name, file] of Object.entries(manifest.animations ?? {})) {
+  const animationFiles = { ...manifest.animations };
+  // 本地动作不提交到公开仓库，仅在开发环境显式开启时加载。
+  if (import.meta.env.DEV && import.meta.env.VITE_LOCAL_MIXAMO === '1') {
+    Object.assign(animationFiles, {
+      sitIdle: 'anims/sitting-idle.fbx',
+      standIdle: 'anims/standing-idle.fbx',
+    });
+  }
+  for (const [name, file] of Object.entries(animationFiles)) {
     try {
       const { animations } = await loadFile(l, file);
       if (animations?.[0]) clips[name] = animations[0];
