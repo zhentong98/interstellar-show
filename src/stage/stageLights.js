@@ -53,10 +53,10 @@ export class StageLights {
 
     // —— 分区顶光 ——
     this.sections = [
-      { light: spot({ intensity: 2400, angle: 0.44, position: v(-7, 14, 3), target: v(-3.2, STAGE_Y, -3.8), shadow: true }), beam: 0.22 },
+      { light: spot({ intensity: 1700, angle: 0.44, position: v(-7, 14, 3), target: v(-3.2, STAGE_Y, -3.8), shadow: true }), beam: 0.22 },
       { light: spot({ intensity: 1200, angle: 0.36, position: v(-2.5, 14.5, 0.5), target: v(-1.8, STAGE_Y, -6) }), beam: 0.16 },
-      { light: spot({ intensity: 2000, angle: 0.34, position: v(8, 15, -1), target: v(6.8, STAGE_Y + 1, -9), shadow: true }), beam: 0.2 },
-      { light: spot({ intensity: 1300, angle: 0.25, position: v(7.5, 13, 2.5), target: v(4.9, STAGE_Y, -3.6) }), beam: 0.22 },
+      { light: spot({ intensity: 1450, angle: 0.34, position: v(8, 15, -1), target: v(6.8, STAGE_Y + 1, -9), shadow: true }), beam: 0.2 },
+      { light: spot({ intensity: 900, angle: 0.25, position: v(7.5, 13, 2.5), target: v(4.9, STAGE_Y, -3.6) }), beam: 0.22 },
       { light: spot({ intensity: 1000, angle: 0.26, position: v(2.5, 13, -2), target: ORGAN_CONSOLE.clone() }), beam: 0.2 },
     ];
     for (const s of this.sections) {

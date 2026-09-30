@@ -52,8 +52,21 @@ const REALISTIC = {
 };
 
 /**
+ * 扫描贴图里的白衬衫、浅色外套接近纯白（线性反照率 0.8 以上），真实白布大约 0.55～0.65；
+ * 在舞台追光下会过曝、被 Bloom 晕成一团。这里只压亮部，深色西装和肤色基本不动。
+ */
+function tameHighlights(mat) {
+  mat.onBeforeCompile = (shader) => {
+    shader.fragmentShader = shader.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
+      float albedoLum = dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722));
+      diffuseColor.rgb *= 1.0 - 0.45 * smoothstep(0.3, 0.9, albedoLum);`);
+  };
+  mat.customProgramCacheKey = () => 'tame-highlights';
+}
+
+/**
  * 统一材质：FBX 常见的 Phong 材质换成 PBR，头发等半透明贴图改成 alphaTest，
- * 避免大量半透明物体排序出错。
+ * 避免大量半透明物体排序出错；带贴图的扫描材质压一压过亮的布料。
  */
 function prepareMaterials(root) {
   root.traverse((o) => {
@@ -72,7 +85,10 @@ function prepareMaterials(root) {
           roughness: 0.7, metalness: 0,
         });
       }
-      if (mat.map) mat.map.colorSpace = THREE.SRGBColorSpace;
+      if (mat.map) {
+        mat.map.colorSpace = THREE.SRGBColorSpace;
+        tameHighlights(mat);
+      }
       if (mat.transparent || mat.alphaMap) {
         mat.transparent = false;
         mat.alphaTest = 0.5;

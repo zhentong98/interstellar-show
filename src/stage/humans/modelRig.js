@@ -9,12 +9,58 @@
 
 import * as THREE from 'three';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
-import { TIP_CHILD, UPPER } from './rig.js';
+import { TIP_CHILD, UPPER, handInfo } from './rig.js';
 
 const normalize = (name) => name.replace(/^mixamorig\d*[:_]?/i, '');
 
 /** 手的朝向用中指根部 */
 const HAND_TIP = { LeftHand: 'LeftHandMiddle1', RightHand: 'RightHandMiddle1' };
+
+const _v = new THREE.Vector3();
+const _q = new THREE.Quaternion();
+
+/**
+ * 掌心法线（手骨局部坐标）：取主要受这只手（含手指）驱动的顶点做主成分分析，
+ * 方差最小的方向垂直于手掌。扫描模型的静止姿态是 T 形或 A 形，掌心都朝下或朝向大腿，据此定正负。
+ */
+function palmNormal(meshes, hand, sx) {
+  const own = new Set();
+  hand.traverse((b) => { if (b.isBone) own.add(b); });
+  const pts = [];
+  for (const mesh of meshes) {
+    if (!mesh.isSkinnedMesh) continue;
+    const ids = new Set(mesh.skeleton.bones.map((b, i) => (own.has(b) ? i : -1)).filter((i) => i >= 0));
+    if (!ids.size) continue;
+    const { position, skinIndex, skinWeight } = mesh.geometry.attributes;
+    for (let i = 0; i < position.count; i++) {
+      let w = 0;
+      for (let k = 0; k < 4; k++) if (ids.has(skinIndex.getComponent(i, k))) w += skinWeight.getComponent(i, k);
+      if (w < 0.6) continue;
+      mesh.getVertexPosition(i, _v).applyMatrix4(mesh.matrixWorld);
+      pts.push(hand.worldToLocal(_v.clone()));
+    }
+  }
+  hand.getWorldQuaternion(_q);
+  const down = new THREE.Vector3(-sx * 0.5, -1, 0).applyQuaternion(_q.clone().invert());
+  if (pts.length < 30) return down.normalize();
+  const mean = pts.reduce((a, p) => a.add(p), new THREE.Vector3()).divideScalar(pts.length);
+  const c = new Array(9).fill(0);
+  for (const p of pts) {
+    const d = [p.x - mean.x, p.y - mean.y, p.z - mean.z];
+    for (let r = 0; r < 3; r++) for (let k = 0; k < 3; k++) c[r * 3 + k] += d[r] * d[k];
+  }
+  // 幂迭代求 (tr·I − C) 的最大特征向量，即 C 的最小特征向量
+  const tr = c[0] + c[4] + c[8];
+  let n = new THREE.Vector3(0.3, 0.5, 0.8);
+  for (let it = 0; it < 64; it++) {
+    n = new THREE.Vector3(
+      tr * n.x - (c[0] * n.x + c[1] * n.y + c[2] * n.z),
+      tr * n.y - (c[3] * n.x + c[4] * n.y + c[5] * n.z),
+      tr * n.z - (c[6] * n.x + c[7] * n.y + c[8] * n.z),
+    ).normalize();
+  }
+  return n.dot(down) < 0 ? n.negate() : n;
+}
 
 export class ModelRig {
   /**
@@ -68,6 +114,24 @@ export class ModelRig {
     this.chestRestInv = this.bones.Spine2.getWorldQuaternion(new THREE.Quaternion()).invert();
     const hips = this.bones.Hips.getWorldPosition(new THREE.Vector3());
     this.hipHeight = this.root.worldToLocal(hips).y;
+    // 脚踝离地高度和脚掌的俯仰（高跟鞋的脚踝更高、脚掌更斜），坐下时照着它放脚，鞋底才不会陷进地板
+    const foot = this.bones.LeftFoot;
+    const ankle = this.root.worldToLocal(foot.getWorldPosition(new THREE.Vector3()));
+    this.ankleHeight = ankle.y;
+    if (foot.userData.tip) {
+      const toe = this.root.worldToLocal(foot.localToWorld(foot.userData.tip.clone()));
+      this.footDir = toe.sub(ankle).setX(0).normalize();
+    }
+
+    // 掌心朝向：同一个人物的所有克隆共用（算一次）
+    character.palms ??= {
+      Left: palmNormal(this.meshes, this.bones.LeftHand, 1),
+      Right: palmNormal(this.meshes, this.bones.RightHand, -1),
+    };
+    this.hands = {
+      Left: handInfo(this, 'Left', character.palms.Left),
+      Right: handInfo(this, 'Right', character.palms.Right),
+    };
 
     // 上身动作捕捉（只保留脊柱、脖子、头的旋转轨道）
     if (idleClip) {

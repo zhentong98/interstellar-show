@@ -17,7 +17,7 @@ import { damp, clamp01, lerp, seededRandom, range, smoothstep } from '../core/ma
 import { STAGE_Y, PODIUM, WINGS, ORGAN_CONSOLE } from './layout.js';
 import { Rig } from './humans/rig.js';
 import { createLook, buildSkinnedBody, Crowd } from './humans/body.js';
-import { poseBody, poseArm, restArms, toWorld, chestFrame } from './humans/pose.js';
+import { poseBody, poseArm, gripArm, restArms, toWorld, chestFrame } from './humans/pose.js';
 import { ModelRig } from './humans/modelRig.js';
 import { pickCharacter } from './humans/cast.js';
 import { bakePose } from './humans/bake.js';
@@ -33,7 +33,7 @@ const mat = {
   paper: new THREE.MeshStandardMaterial({ color: 0xe8e2d4, roughness: 0.9, side: THREE.DoubleSide }),
   copper: new THREE.MeshPhysicalMaterial({ color: 0xc77b45, metalness: 1, roughness: 0.24, clearcoat: 0.6, clearcoatRoughness: 0.2 }),
   chrome: new THREE.MeshStandardMaterial({ color: 0xdadada, metalness: 1, roughness: 0.15 }),
-  drumHead: new THREE.MeshStandardMaterial({ color: 0xece4d0, roughness: 0.75, emissive: 0xffe0b0, emissiveIntensity: 0 }),
+  drumHead: new THREE.MeshStandardMaterial({ color: 0x9a917e, roughness: 0.75, emissive: 0xffe0b0, emissiveIntensity: 0 }),
   riser: new THREE.MeshStandardMaterial({ color: 0x1d1611, roughness: 0.6 }),
   console: new THREE.MeshPhysicalMaterial({ color: 0x3e2413, roughness: 0.35, clearcoat: 0.8, clearcoatRoughness: 0.25 }),
   keys: new THREE.MeshStandardMaterial({ map: organKeys(), roughness: 0.35 }),
@@ -156,6 +156,14 @@ const BAKE_POSES = {
   ],
 };
 const BOWED_SMALL = ['violin1', 'violin2', 'viola'];
+
+/** 握法：手指三节的弯曲（弧度）和拇指 */
+const GRIP = {
+  neck: { curl: [0.75, 0.95, 0.6], thumb: 0.35 }, // 按弦：手指弯过指板
+  bow: { curl: [0.45, 0.6, 0.35], thumb: 0.5 }, // 握弓：手指搭在弓杆上
+  mallet: { curl: [0.9, 1.1, 0.7], thumb: 0.45 }, // 握槌：半握拳
+  folder: { curl: [0.45, 0.6, 0.4], thumb: 0.25 }, // 捏谱夹：手指绕到背面
+};
 
 export class Orchestra {
   constructor() {
@@ -751,6 +759,7 @@ export class Orchestra {
       const bridgeW = v4.copy(bridgeLocal).applyMatrix4(M);
       const instUp = col(M, 1, new THREE.Vector3());
       const instX = col(M, 0, new THREE.Vector3());
+      const sideX = instX.clone(); // 琴颈的侧向（左手掌心朝这边）
       // —— 弓 ——（演奏：弓毛压在琴马处，弓尖指向演奏者左边；放下：竖着拿在右手）
       const tipDir = small ? instX : instX.negate();
       const contact = small ? 0.1 + 0.28 * (1 + m.stroke) : 0.12 + 0.19 * (1 + m.stroke);
@@ -768,12 +777,20 @@ export class Orchestra {
       write('bow', m.slot.bow, bowM);
 
       // —— 双手 ——
-      const left = neckW.clone().addScaledVector(instUp, -0.03 * scaleK);
-      poseArm(rig, 'Left', left, toWorld(rig, 0.4, lerp(0.8, 0.9, m.raise), lerp(-0.1, 0.1, m.raise)).clone());
+      // 左手：掌心贴着琴颈侧面，手指朝琴面方向伸出、再弯过指板按弦（虎口托着琴颈）
+      const neckSide = small ? 0.028 : 0.045;
+      const leftCenter = neckW.clone().addScaledVector(sideX, -neckSide * scaleK).addScaledVector(instUp, -0.035 * scaleK);
+      gripArm(rig, 'Left', leftCenter, instUp, sideX,
+        toWorld(rig, 0.4, lerp(0.8, 0.9, m.raise), lerp(-0.1, 0.1, m.raise)).clone(), GRIP.neck);
+      // 右手：掌心朝下压在弓根上方，手指朝外侧搭过弓杆
+      const bx = col(bowM, 0, new THREE.Vector3());
+      const by = col(bowM, 1, new THREE.Vector3());
+      const bz = col(bowM, 2, new THREE.Vector3());
       const frog = new THREE.Vector3().setFromMatrixPosition(bowM);
-      const bowY = col(bowM, 1, new THREE.Vector3());
-      const right = frog.addScaledVector(bowY, 0.022);
-      poseArm(rig, 'Right', right, toWorld(rig, -0.65, 0.95, lerp(-0.3, -0.05, m.raise)).clone());
+      const rightCenter = frog.addScaledVector(by, 0.032).addScaledVector(bx, 0.018).addScaledVector(bz, 0.03);
+      const fingers = bx.clone().multiplyScalar(-0.75).addScaledVector(by, -0.5);
+      gripArm(rig, 'Right', rightCenter, fingers, by.negate(),
+        toWorld(rig, -0.65, 0.95, lerp(-0.3, -0.05, m.raise)).clone(), GRIP.bow);
       return;
     }
 
@@ -781,14 +798,19 @@ export class Orchestra {
       blend(M, POSES.folderDown, POSES.folderUp, m.raise);
       toW(M, m2);
       write('folder', m.slot.folder, m2);
-      const lh = v.set(0.14, 0, 0.01).applyMatrix4(m2).clone();
-      const rh = v.set(-0.14, 0, 0.01).applyMatrix4(m2).clone();
+      // 双手捏住谱夹两侧：掌心朝谱夹中间，拇指在正面，手指绕到背面
+      const fx = col(m2, 0, v2);
+      const behind = col(m2, 2, v3).negate();
+      const hold = (side, sx, pole) => {
+        const center = v.set(sx * 0.155, -0.02, 0.03).applyMatrix4(m2).clone();
+        gripArm(rig, side, center, behind, fx.clone().multiplyScalar(-sx), pole, GRIP.folder);
+      };
       if (m.raise > 0.3) {
-        poseArm(rig, 'Left', lh, toWorld(rig, 0.45, 0.9, -0.2).clone());
-        poseArm(rig, 'Right', rh, toWorld(rig, -0.45, 0.9, -0.2).clone());
+        hold('Left', 1, toWorld(rig, 0.45, 0.9, -0.2).clone());
+        hold('Right', -1, toWorld(rig, -0.45, 0.9, -0.2).clone());
       } else {
         restArms(rig, 0);
-        poseArm(rig, 'Left', lh, toWorld(rig, 0.5, 1.0, -0.3).clone());
+        hold('Left', 1, toWorld(rig, 0.5, 1.0, -0.3).clone());
       }
       return;
     }
@@ -808,7 +830,11 @@ export class Orchestra {
         const y = v4.crossVectors(z, x);
         M.makeBasis(x, y, z).setPosition(handPos);
         write('mallet', hand, M);
-        poseArm(rig, hand ? 'Left' : 'Right', handPos, toWorld(rig, sx * 0.6, 0.9, -0.2).clone());
+        // 槌杆斜穿过掌心、从虎口伸出去：掌心朝下，手指横着握住槌杆
+        const palm = y.clone().negate();
+        const fingers = hand ? z.clone().cross(palm) : palm.clone().cross(z);
+        const center = handPos.clone().addScaledVector(z, 0.07).addScaledVector(y, 0.022);
+        gripArm(rig, hand ? 'Left' : 'Right', center, fingers, palm, toWorld(rig, sx * 0.6, 0.9, -0.2).clone(), GRIP.mallet);
       }
       return;
     }
@@ -848,7 +874,7 @@ export class Orchestra {
     for (const d of this.drumHeads) {
       d.flash = damp(d.flash, 0, 6, dt);
       d.wobble = damp(d.wobble, 0, 5, dt);
-      d.mesh.material.emissiveIntensity = d.flash * 0.8;
+      d.mesh.material.emissiveIntensity = d.flash * 0.5;
       d.mesh.position.y = 0.005 + Math.sin(this.time * 90) * d.wobble * 0.006;
     }
   }

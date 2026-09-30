@@ -3,7 +3,7 @@
 
 import * as THREE from 'three';
 import { lerp } from '../../core/math.js';
-import { aimBone, solveTwoBone } from './rig.js';
+import { aimBone, solveTwoBone, rotateWorld } from './rig.js';
 
 const _v = new THREE.Vector3();
 const _p = new THREE.Vector3();
@@ -85,13 +85,14 @@ export function poseBody(rig, s) {
     const stride = Math.sin(phase + ph);
     const lift = Math.max(0, Math.cos(phase + ph)) * 0.08;
     const fx = sx * lerp(0.11, 0.14, sit);
-    const fy = 0.075 + walk * lift;
+    const fy = (rig.ankleHeight ?? 0.075) + walk * lift;
     const fz = lerp(0.03, 0.42, sit) + walk * stride * 0.22;
     const target = toWorld(rig, fx, fy, fz, _p).clone();
     const pole = toWorld(rig, sx * 0.1, lerp(0.5, 0.6, sit), 1.2, _d).clone();
     solveTwoBone(B[`${side}UpLeg`], B[`${side}Leg`], B[`${side}Foot`], target, pole);
-    // 脚掌朝前、略微向下
-    const fwd = _d.set(0, -0.35 + walk * stride * 0.2, 1).applyQuaternion(_rootQ);
+    // 脚掌朝前，俯仰和模型站立时一样（鞋底贴地）
+    const foot = rig.footDir ?? _d.set(0, -0.35, 1).normalize();
+    const fwd = _d.set(0, foot.y / Math.max(0.3, foot.z) + walk * stride * 0.2, 1).applyQuaternion(_rootQ);
     aimBone(B[`${side}Foot`], fwd);
   }
 }
@@ -110,13 +111,84 @@ export function chestFrame(rig, out) {
   return out.compose(_cp, _cq, _cs.setScalar(rig.scale));
 }
 
+const _s = new THREE.Vector3();
+const _c = new THREE.Vector3();
+const _from = new THREE.Vector3();
+const _to = new THREE.Vector3();
+
 /**
- * 手臂 IK：把手放到 target（世界坐标），肘部朝向 pole 一侧；handDir 指定手掌朝向（可选）。
+ * 够不着时先把肩膀（锁骨）朝目标送出去一点，最多约 17°：
+ * 手臂偏短的模型不用把胳膊伸成一根棍子，也能握到琴颈和弓根。
+ */
+function reach(rig, side, target) {
+  const B = rig.bones;
+  const shoulder = B[`${side}Shoulder`];
+  if (!shoulder) return;
+  B[`${side}Arm`].getWorldPosition(_s);
+  const arm = _s.distanceTo(B[`${side}ForeArm`].getWorldPosition(_c)) + _c.distanceTo(B[`${side}Hand`].getWorldPosition(_p));
+  const over = _s.distanceTo(target) - arm * 0.94;
+  if (over <= 0) return;
+  shoulder.getWorldPosition(_c);
+  _from.subVectors(_s, _c);
+  _to.subVectors(target, _c);
+  const angle = Math.min(0.3, _from.angleTo(_to), over / _from.length());
+  _ax.crossVectors(_from, _to);
+  if (_ax.lengthSq() < 1e-10) return;
+  rotateWorld(shoulder, _ax.normalize(), angle);
+}
+
+/**
+ * 手臂 IK：把手腕放到 target（世界坐标），肘部朝向 pole 一侧；handDir 指定手掌朝向（可选）。
  */
 export function poseArm(rig, side, target, pole, handDir = null) {
   const B = rig.bones;
+  reach(rig, side, target);
   solveTwoBone(B[`${side}Arm`], B[`${side}ForeArm`], B[`${side}Hand`], target, pole);
   if (handDir) aimBone(B[`${side}Hand`], handDir);
+}
+
+const _hx = new THREE.Vector3();
+const _hy = new THREE.Vector3();
+const _hz = new THREE.Vector3();
+const _hm = new THREE.Matrix4();
+const _hq = new THREE.Quaternion();
+const _wr = new THREE.Vector3();
+
+/**
+ * 握住某样东西：手掌中心放在 center，手指（伸直时）指向 dir，掌心朝向 palm，然后弯曲手指。
+ * 先解手臂 IK 把手腕放到位，再转手骨、弯手指。
+ * @param {object} grip  curl：手指三节各弯多少（弧度），thumb：拇指弯多少
+ */
+export function gripArm(rig, side, center, dir, palm, pole, grip = {}) {
+  const hand = rig.hands?.[side];
+  if (!hand) return poseArm(rig, side, center, pole);
+  _hx.copy(dir).normalize();
+  _hy.copy(palm);
+  _hy.addScaledVector(_hx, -_hy.dot(_hx)).normalize();
+  _hz.crossVectors(_hx, _hy);
+  // 手腕 = 掌心中点沿手指方向往回退半只手，再离开接触面一点
+  const len = hand.len * rig.scale;
+  const wrist = _wr.copy(center).addScaledVector(_hx, -len * 0.55).addScaledVector(_hy, -len * 0.12);
+  poseArm(rig, side, wrist, pole);
+
+  // 手骨的世界朝向 = 目标基 · 静止姿态里的基⁻¹
+  const bone = rig.bones[`${side}Hand`];
+  _hq.setFromRotationMatrix(_hm.makeBasis(_hx, _hy, _hz)).multiply(_dq.copy(hand.basis).invert());
+  bone.parent.getWorldQuaternion(_pq);
+  bone.quaternion.copy(_pq.invert().multiply(_hq));
+  bone.updateMatrixWorld(true);
+
+  // 弯手指：绕"手指 × 掌心"的轴转，手指朝掌心卷
+  const [a = 0, b = a, c = b] = grip.curl ?? [];
+  if (a || b || c) {
+    _ax.crossVectors(_hx, _hy).normalize();
+    for (const chain of hand.fingers) chain.forEach((j, k) => rotateWorld(j, _ax, [a, b, c][k]));
+  }
+  if (grip.thumb && hand.thumb.length) {
+    // 拇指：绕手指方向朝掌心收
+    _ax.copy(_hx).multiplyScalar(side === 'Left' ? 1 : -1);
+    hand.thumb.forEach((j, k) => rotateWorld(j, _ax, grip.thumb * (k ? 0.5 : 1)));
+  }
 }
 
 /** 手臂自然下垂（站着）或放在腿上（坐着） */

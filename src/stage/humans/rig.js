@@ -75,6 +75,11 @@ export class Rig {
     }
     this.root.updateMatrixWorld(true);
     this.chestRestInv = this.bones.Spine2.getWorldQuaternion(new THREE.Quaternion()).invert();
+    // 静止姿态双臂下垂，掌心朝向大腿；程序化的手没有手指骨骼
+    this.hands = {
+      Left: handInfo(this, 'Left', new THREE.Vector3(-1, 0, 0)),
+      Right: handInfo(this, 'Right', new THREE.Vector3(1, 0, 0)),
+    };
   }
 
   /** 站立时髋部离地的高度（米，未乘个体缩放） */
@@ -96,6 +101,32 @@ export class Rig {
   }
 }
 
+const FINGERS = ['Index', 'Middle', 'Ring', 'Pinky'];
+
+/**
+ * 手的朝向信息（握琴、握弓用）：
+ *   basis  手骨局部坐标里"手指方向 + 掌心法线"组成的正交基（四元数）
+ *   len    手腕到中指根部的长度（米，未乘个体缩放）
+ *   fingers / thumb  各手指的前三节骨骼（没有就是空数组）
+ * @param {THREE.Vector3} palmLocal 掌心法线（手骨局部坐标，指向掌心一侧）
+ */
+export function handInfo(rig, side, palmLocal) {
+  const bone = rig.bones[`${side}Hand`];
+  const dir = bone.userData.tip.clone().normalize();
+  const palm = palmLocal.clone().addScaledVector(dir, -palmLocal.dot(dir)).normalize();
+  const basis = new THREE.Quaternion().setFromRotationMatrix(
+    new THREE.Matrix4().makeBasis(dir, palm, new THREE.Vector3().crossVectors(dir, palm)),
+  );
+  const s = bone.getWorldScale(new THREE.Vector3()).x / rig.root.getWorldScale(new THREE.Vector3()).x;
+  const chain = (name) => [1, 2, 3].map((k) => rig.bones[`${side}Hand${name}${k}`]).filter(Boolean);
+  return {
+    basis,
+    len: bone.userData.tip.length() * s,
+    fingers: FINGERS.map(chain).filter((c) => c.length),
+    thumb: chain('Thumb'),
+  };
+}
+
 // ——— IK 工具 ———
 
 const _pq = new THREE.Quaternion();
@@ -112,6 +143,20 @@ export function aimBone(bone, dir) {
   _rest.copy(tip).normalize().applyQuaternion(bone.userData.restQuat);
   _q.setFromUnitVectors(_rest, _want);
   bone.quaternion.copy(_q).multiply(bone.userData.restQuat);
+  bone.updateMatrixWorld(true);
+}
+
+const _wq = new THREE.Quaternion();
+const _wd = new THREE.Quaternion();
+
+/** 让骨骼绕世界坐标里的轴转 angle（叠加在当前姿态上） */
+export function rotateWorld(bone, axis, angle) {
+  if (!angle) return;
+  bone.parent.getWorldQuaternion(_wq);
+  _wd.setFromAxisAngle(axis, angle);
+  // 父骨骼坐标系里的增量：pq⁻¹ · 旋转 · pq
+  _wd.premultiply(_wq.clone().invert()).multiply(_wq);
+  bone.quaternion.premultiply(_wd);
   bone.updateMatrixWorld(true);
 }
 
