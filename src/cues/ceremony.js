@@ -94,6 +94,7 @@ export const ceremony = {
     applauseDuration: 34,
     lower: 1.4,
     audienceStagger: 3.5, // 前排观众陆续起立的时间跨度
+    viewerStand: 1.8, // 镜头所在的第 8 排跟着起立的时刻（和这一排观众差不多同时）
     stageLevel: 1.1,
     beams: 1.3, // 谢幕：全场光束最亮
     turn: 0.9,

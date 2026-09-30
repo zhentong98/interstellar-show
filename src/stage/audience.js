@@ -7,14 +7,13 @@
 
 import * as THREE from 'three';
 import { damp, seededRandom, range } from '../core/math.js';
-import { SEATING, VIEW_ROW, rowZ, rowFloorY } from './layout.js';
+import { SEATING, VIEW_ROW, STAND_LIFT, rowZ, rowFloorY } from './layout.js';
 import { Rig } from './humans/rig.js';
 import { poseBody } from './humans/pose.js';
 import { createLook, bodyParts, bustGeometry, bodyMaterial } from './humans/body.js';
 
 const CLOTHES = [0x141414, 0x1b1d24, 0x2e241d, 0x3a3a40, 0x4a2a2e, 0x23302f, 0x5a5048, 0x6b1f24, 0x1f2a44];
 const SEAT = 0x5a1018;
-const STAND_LIFT = 0.41; // 从坐到站，髋部升高
 
 export class Audience {
   /** @param {import('./houseLights.js').HouseLights} house */
