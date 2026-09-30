@@ -13,6 +13,7 @@ const _d = new THREE.Vector3();
 export const toWorld = (rig, x, y, z, target = _v) => rig.root.localToWorld(target.set(x, y, z));
 
 const _pq = new THREE.Quaternion();
+const _pqi = new THREE.Quaternion();
 const _dq = new THREE.Quaternion();
 const _ax = new THREE.Vector3();
 const _rootQ = new THREE.Quaternion();
@@ -30,9 +31,8 @@ function turn(bone, axis, angle) {
   bone.parent.getWorldQuaternion(_pq);
   _dq.setFromAxisAngle(_ax, angle);
   // 父骨骼坐标系里的增量：pq⁻¹ · 旋转 · pq
-  _dq.premultiply(_pq.clone().invert()).multiply(_pq);
+  _dq.premultiply(_pqi.copy(_pq).invert()).multiply(_pq);
   bone.quaternion.premultiply(_dq);
-  bone.updateMatrixWorld(true);
 }
 
 /**
@@ -45,7 +45,12 @@ function turn(bone, axis, angle) {
  *   headPitch / headYaw / headRoll  低头 / 转头 / 歪头
  *   walk      0~1 走路程度，phase 步伐相位
  *   breathe   呼吸相位（弧度），breatheAmp 幅度
- *   keepUpper 为 true 时不重置上身（动作捕捉已经在这一帧驱动了脊柱和头），只叠加前倾等
+ *   shrug     两肩一起微微耸起（弧度，唱歌吸气时）
+ *   roll      上身向左右侧弯（弧度，正值向左）
+ *   dip       站立时屈膝下沉（米，指挥打拍子的一点弹性）
+ *   spread    坐姿两膝额外分开（米，大提琴、低音提琴把琴夹在两膝之间）
+ *   feet      坐姿时两脚的额外偏移 { Left: [x, y, z], Right: [x, y, z] }（管风琴踩踏板）
+ *   keepUpper 为 true（或 0~1 的比例）时保留上身的动作捕捉（这一帧已经驱动了脊柱和头），再叠加前倾等
  */
 export function poseBody(rig, s) {
   const B = rig.bones;
@@ -61,8 +66,8 @@ export function poseBody(rig, s) {
   const hip = rig.hipHeight ?? 0.94;
   const bob = walk * Math.abs(Math.cos(phase)) * 0.025;
   const hipsWorld = toWorld(rig, 0, lerp(hip, seat + 0.07, sit) + bob, lerp(0, -0.04, sit), _p);
+  if (s.dip) hipsWorld.y -= s.dip * (1 - sit) * rig.scale;
   B.Hips.position.copy(B.Hips.parent.worldToLocal(hipsWorld));
-  B.Hips.updateMatrixWorld(true);
   turn(B.Hips, AXIS_X, lerp(0, -0.08, sit));
   turn(B.Hips, AXIS_Y, (s.twist ?? 0) * 0.3 + walk * Math.sin(phase) * 0.06);
 
@@ -73,6 +78,11 @@ export function poseBody(rig, s) {
     if (!B[name]) continue;
     turn(B[name], AXIS_X, bend * k + extra);
     turn(B[name], AXIS_Y, (s.twist ?? 0) * 0.35);
+    if (s.roll) turn(B[name], AXIS_Z, -s.roll * k);
+  }
+  if (s.shrug) {
+    if (B.LeftShoulder) turn(B.LeftShoulder, AXIS_Z, s.shrug);
+    if (B.RightShoulder) turn(B.RightShoulder, AXIS_Z, -s.shrug);
   }
   turn(B.Neck, AXIS_X, (s.headPitch ?? 0) * 0.4 - bend * 0.15);
   turn(B.Neck, AXIS_Y, (s.headYaw ?? 0) * 0.4);
@@ -87,8 +97,12 @@ export function poseBody(rig, s) {
     const fx = sx * lerp(0.11, 0.14, sit);
     const fy = (rig.ankleHeight ?? 0.075) + walk * lift;
     const fz = lerp(0.03, 0.42, sit) + walk * stride * 0.22;
-    const target = toWorld(rig, fx, fy, fz, _p).clone();
-    const pole = toWorld(rig, sx * 0.1, lerp(0.5, 0.6, sit), 1.2, _d).clone();
+    const spread = sx * (s.spread ?? 0) * sit;
+    const extra = s.feet?.[side];
+    const target = extra
+      ? toWorld(rig, fx + spread + extra[0] * sit, fy + extra[1] * sit, fz + extra[2] * sit, _p).clone()
+      : toWorld(rig, fx + spread, fy, fz, _p).clone();
+    const pole = toWorld(rig, sx * 0.1 + spread * 1.5, lerp(0.5, 0.6, sit), 1.2, _d).clone();
     solveTwoBone(B[`${side}UpLeg`], B[`${side}Leg`], B[`${side}Foot`], target, pole);
     // 脚掌朝前，俯仰和模型站立时一样（鞋底贴地）
     const foot = rig.footDir ?? _d.set(0, -0.35, 1).normalize();
@@ -176,19 +190,43 @@ export function gripArm(rig, side, center, dir, palm, pole, grip = {}) {
   _hq.setFromRotationMatrix(_hm.makeBasis(_hx, _hy, _hz)).multiply(_dq.copy(hand.basis).invert());
   bone.parent.getWorldQuaternion(_pq);
   bone.quaternion.copy(_pq.invert().multiply(_hq));
-  bone.updateMatrixWorld(true);
 
-  // 弯手指：绕"手指 × 掌心"的轴转，手指朝掌心卷
+  bendFingers(hand, side, grip);
+}
+
+/**
+ * 弯手指：绕"手指 × 掌心"的轴转，手指朝掌心卷（_hx 手指方向、_hy 掌心法线，世界坐标）。
+ *   grip.curl     三节各弯多少（弧度）
+ *   grip.fingers  食指、中指、无名指、小指各自的倍数（按弦、按键时手指有起有落）
+ *   grip.mitten   只有一根指骨的模型（四指蒙皮在同一条骨骼链上，像连指手套）用的倍数：
+ *                 四指只能一起弯，弯太多会像握拳，太少又像僵直的木板
+ *   grip.thumb    拇指朝掌心收多少
+ */
+function bendFingers(hand, side, grip) {
   const [a = 0, b = a, c = b] = grip.curl ?? [];
+  const mitten = hand.fingers.length === 1;
   if (a || b || c) {
     _ax.crossVectors(_hx, _hy).normalize();
-    for (const chain of hand.fingers) chain.forEach((j, k) => rotateWorld(j, _ax, [a, b, c][k]));
+    hand.fingers.forEach((chain, f) => {
+      const k = mitten ? (grip.mitten ?? 1) : (grip.fingers?.[f] ?? 1);
+      if (k) chain.forEach((j, n) => rotateWorld(j, _ax, [a, b, c][n] * k));
+    });
   }
   if (grip.thumb && hand.thumb.length) {
     // 拇指：绕手指方向朝掌心收
     _ax.copy(_hx).multiplyScalar(side === 'Left' ? 1 : -1);
     hand.thumb.forEach((j, k) => rotateWorld(j, _ax, grip.thumb * (k ? 0.5 : 1)));
   }
+}
+
+/** 只弯手指，不动手腕（手的朝向已经由别的方式定好，比如指挥握棒） */
+export function curlFingers(rig, side, grip) {
+  const hand = rig.hands?.[side];
+  if (!hand) return;
+  rig.bones[`${side}Hand`].getWorldQuaternion(_hq).multiply(hand.basis);
+  _hx.set(1, 0, 0).applyQuaternion(_hq);
+  _hy.set(0, 1, 0).applyQuaternion(_hq);
+  bendFingers(hand, side, grip);
 }
 
 /** 手臂自然下垂（站着）或放在腿上（坐着） */
