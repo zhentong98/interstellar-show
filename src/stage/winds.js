@@ -103,8 +103,8 @@ export function windParts(musicians, make) {
     if (!n) continue;
     const { geometry, material } = build();
     parts[section] = make(geometry, material, n);
-    // 长笛、双簧管、单簧管又细又小，影子几乎看不见，不进阴影贴图（每盏投影灯少画几次）
-    if (!['bassoon', 'horn'].includes(section)) parts[section].castShadow = false;
+    // 只有大管投影：长笛、双簧管、单簧管又细又小，圆号在左后方离得远，影子都看不出来（每盏投影灯少画几次）
+    if (section !== 'bassoon') parts[section].castShadow = false;
   }
   return parts;
 }
@@ -452,6 +452,11 @@ export class WindPlayers {
     const rig = m.rig;
     const s = m.baked ? IDLE : m.wind;
     const walking = m.walk > 0 && m.walk < 1;
+    if (m.halfRate && s.shadowRig !== rig) {
+      // 圆号手、钢琴手在左后方、离所有特写机位都远，影子几乎看不见：不进阴影贴图，省下三盏投影灯里的绘制
+      s.shadowRig = rig;
+      for (const mesh of rig.meshes ?? []) mesh.castShadow = false;
+    }
     rig.root.position.copy(m.pos);
     rig.root.rotation.set(0, m.facing ?? m.yaw, 0); // 走路时朝着前进方向（walkOn 写入）
     const play = m.raise * (1 - s.rest);

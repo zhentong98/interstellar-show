@@ -3,11 +3,11 @@
 // 钢琴自身坐标：原点在键盘前沿中点正下方的地面；+z 从键盘指向琴尾；+x 在琴手左边
 // （低音区，琴身的直边），高音区一侧是弯进去的琴身，琴盖铰链在直边、从高音一侧掀起朝向观众。
 // 外壳是高光黑漆（清漆层），琴盖掀开后能看到金色铸铁板、钢弦（低音区是铜缠弦）、制音器和云杉音板。
-// 两架钢琴位置固定，所有零件按材质合并成一组网格（总共十来次绘制）。
+// 零件只用三种材质：黑漆（清漆层）、金属（铸铁板、钢弦、铜弦、铜踏板和脚轮，顶点色区分）、
+// 哑光（琴键、制音器、音板、毡条、琴凳皮面，顶点色区分），每架琴身 3 次绘制，只有黑漆投影。
 
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { instrumentWood } from './textures.js';
 import { whiteMaterial } from './lightBudget.js';
 
 /** 手在键盘上要用到的尺寸（米） */
@@ -22,16 +22,34 @@ export const PIANO = {
 const M = {
   // 钢琴漆：清漆层给出黑亮的倒影；清漆粗糙度留一点，顶光在琴身上是一片柔和的高光，而不是被 Bloom 晕开的亮点
   lacquer: new THREE.MeshPhysicalMaterial({ color: 0x070707, roughness: 0.25, clearcoat: 0.7, clearcoatRoughness: 0.2 }),
-  ivory: new THREE.MeshStandardMaterial({ color: whiteMaterial(0xf0ebdd), roughness: 0.38 }),
-  ebony: new THREE.MeshStandardMaterial({ color: 0x0a0909, roughness: 0.4 }),
-  plate: new THREE.MeshStandardMaterial({ color: 0xa8843c, metalness: 0.85, roughness: 0.42 }),
-  steel: new THREE.MeshStandardMaterial({ color: 0xc8c8c8, metalness: 1, roughness: 0.36 }),
-  copper: new THREE.MeshStandardMaterial({ color: 0xb06c3a, metalness: 1, roughness: 0.4 }),
-  spruce: new THREE.MeshStandardMaterial({ color: 0xb89466, map: instrumentWood(), roughness: 0.6 }),
-  brass: new THREE.MeshStandardMaterial({ color: 0xc9a24e, metalness: 1, roughness: 0.34 }),
-  felt: new THREE.MeshStandardMaterial({ color: 0x6e1a1a, roughness: 0.95 }),
-  leather: new THREE.MeshPhysicalMaterial({ color: 0x0c0c0c, roughness: 0.5, sheen: 0.4, sheenRoughness: 0.5, sheenColor: new THREE.Color(0x303030) }),
+  metal: new THREE.MeshStandardMaterial({ vertexColors: true, metalness: 1, roughness: 0.4 }),
+  matte: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5 }),
 };
+
+/** 零件名 → [材质, 顶点色] */
+const PAINT = {
+  lacquer: ['lacquer', 0xffffff],
+  plate: ['metal', 0xa8843c], // 金色铸铁板
+  steel: ['metal', 0xc8c8c8],
+  copper: ['metal', 0xb06c3a], // 低音区的铜缠弦
+  brass: ['metal', 0xc9a24e],
+  ivory: ['matte', whiteMaterial(0xf0ebdd)],
+  ebony: ['matte', 0x0a0909],
+  spruce: ['matte', 0xa88457], // 云杉音板
+  felt: ['matte', 0x6e1a1a],
+  leather: ['matte', 0x0c0c0c],
+};
+
+/** 给零件刷顶点色（同一材质的零件合并时属性要一致） */
+function paint(geo, color) {
+  const g = geo.index ? geo.toNonIndexed() : geo;
+  const c = new THREE.Color(color);
+  const n = g.attributes.position.count;
+  const arr = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) c.toArray(arr, i * 3);
+  g.setAttribute('color', new THREE.BufferAttribute(arr, 3));
+  return g;
+}
 
 /** 琴身轮廓（x, z）：低音直边 → 琴尾圆角 → 高音一侧弯进去的曲线 → 高音前角 */
 const OUTLINE = [
@@ -172,14 +190,15 @@ function buildParts() {
 /** 同一材质的零件合并成一个网格 */
 function byMaterial(parts) {
   const byKey = new Map();
-  for (const [key, geo] of parts) {
+  for (const [name, geo] of parts) {
+    const [key, color] = PAINT[name];
     if (!byKey.has(key)) byKey.set(key, []);
-    byKey.get(key).push(geo.index ? geo.toNonIndexed() : geo);
+    byKey.get(key).push(paint(geo, color));
   }
   return [...byKey].map(([key, list]) => {
     const mesh = new THREE.Mesh(mergeGeometries(list), M[key]);
-    // 细小的琴弦、弦轴不投影（省阴影贴图的绘制，也没有可见的影子）
-    mesh.castShadow = !['steel', 'copper', 'felt'].includes(key);
+    // 只有黑漆的琴身、琴盖、琴腿投影；琴弦、琴键、踏板这些小零件的影子看不出来，不进阴影贴图
+    mesh.castShadow = key === 'lacquer';
     mesh.receiveShadow = true;
     return mesh;
   });
