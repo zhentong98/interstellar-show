@@ -21,7 +21,6 @@
 //   - 钢琴手双手在键盘上跟着拍子左右移动弹琶音，每个八分音符按一下键
 
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { damp, lerp, clamp01, range, seededRandom } from '../core/math.js';
 import { STAGE_Y, PODIUM, WINGS, WOODWINDS, HORNS, PIANOS } from './layout.js';
 import { createLook } from './humans/body.js';
@@ -112,17 +111,31 @@ export function windParts(musicians, make) {
 
 const riserMaterial = new THREE.MeshStandardMaterial({ color: 0x1d1611, roughness: 0.6 });
 
-/** 以指挥台为圆心的弧形台阶 */
+/**
+ * 以指挥台为圆心的弧形台阶，切成每段约 6° 的扇形块做实例化：
+ * 入场走位（walkPaths.js）按每个网格 / 实例的包围盒标障碍，整块弧形的包围盒会把旁边的过道一起堵死，
+ * 切成小段之后每段的包围盒都贴着弧形。
+ */
 function arcRiser({ r0, r1, from, to, h }) {
   const a0 = THREE.MathUtils.degToRad(Math.min(from, to));
   const a1 = THREE.MathUtils.degToRad(Math.max(from, to));
-  // 形状平面里的 (x, y) 对应舞台的 (x, −z)，挤出方向是高度
+  const n = Math.max(1, Math.round(THREE.MathUtils.radToDeg(a1 - a0) / 6));
+  const step = (a1 - a0) / n;
+  // 一段扇形：形状平面里的 (x, y) 对应舞台的 (x, −z)（圆心在指挥台），挤出方向是高度
   const shape = new THREE.Shape();
-  shape.absarc(PODIUM.x, -PODIUM.z, r1, a0, a1, false);
-  shape.absarc(PODIUM.x, -PODIUM.z, r0, a1, a0, true);
+  shape.absarc(0, 0, r1, 0, step, false);
+  shape.absarc(0, 0, r0, step, 0, true);
   shape.closePath();
-  return new THREE.ExtrudeGeometry(shape, { depth: h, bevelEnabled: false, curveSegments: 36 })
-    .rotateX(-Math.PI / 2).translate(0, STAGE_Y, 0);
+  const geo = new THREE.ExtrudeGeometry(shape, { depth: h, bevelEnabled: false, curveSegments: 4 }).rotateX(-Math.PI / 2);
+  const mesh = new THREE.InstancedMesh(geo, riserMaterial, n);
+  const m = new THREE.Matrix4();
+  for (let i = 0; i < n; i++) {
+    // 绕竖直轴转 φ 相当于方位角加 φ
+    m.makeRotationY(a0 + i * step).setPosition(PODIUM.x, STAGE_Y, PODIUM.z);
+    mesh.setMatrixAt(i, m);
+  }
+  mesh.receiveShadow = true;
+  return mesh;
 }
 
 /** 钢琴在琴手自身坐标里的位置：键盘前沿在琴凳前方 benchOffset */
@@ -130,11 +143,10 @@ const PIANO_IN_PIANIST = new THREE.Matrix4().makeTranslation(0, 0, PIANO.benchOf
 
 /** 木管和圆号的台阶、两架钢琴和琴凳 */
 export function buildWindProps(group) {
-  const risers = new THREE.Mesh(mergeGeometries([...WOODWINDS.risers, HORNS.riser].map(arcRiser)), riserMaterial);
-  risers.receiveShadow = true;
-  group.add(risers);
+  for (const r of [...WOODWINDS.risers, HORNS.riser]) group.add(arcRiser(r));
+  // 每架钢琴、每张琴凳各是乐团组里的一个子物体：入场走位按它们各自的包围盒绕开
   const matrices = PIANOS.map(({ pianist, yaw }) => new THREE.Matrix4().makeRotationY(yaw).setPosition(pianist).multiply(PIANO_IN_PIANIST));
-  group.add(buildPianos(matrices));
+  group.add(...buildPianos(matrices));
 }
 
 // ——— 乐器姿态 ———
@@ -440,9 +452,8 @@ export class WindPlayers {
     const rig = m.rig;
     const s = m.baked ? IDLE : m.wind;
     const walking = m.walk > 0 && m.walk < 1;
-    const yaw = walking ? Math.atan2(m.seat.x - m.entry.x, m.seat.z - m.entry.z) : m.yaw;
     rig.root.position.copy(m.pos);
-    rig.root.rotation.set(0, yaw, 0);
+    rig.root.rotation.set(0, m.facing ?? m.yaw, 0); // 走路时朝着前进方向（walkOn 写入）
     const play = m.raise * (1 - s.rest);
     const B = m.section === 'piano' ? PIANIST : KINDS[m.section].body;
     const inhale = s.breath;
@@ -457,7 +468,7 @@ export class WindPlayers {
       headYaw: m.headYaw * (1 - play) + (B.headYaw ?? 0) * play,
       headPitch: (B.headPitch ?? 0) * play - 0.08 * glance - 0.05 * inhale,
       headRoll: (B.headRoll ?? 0) * play,
-      walk: walking ? 1 : 0,
+      walk: walking ? m.stride ?? 1 : 0,
       phase: m.walkPhase,
       // 吸气：胸口抬起（脊柱最上一节后仰）、两肩微耸；平时是很轻的呼吸
       breathe: inhale > 0.01 ? -Math.PI / 2 : t * 1.1 + m.phase,

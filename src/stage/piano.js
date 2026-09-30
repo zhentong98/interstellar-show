@@ -157,39 +157,52 @@ function buildParts() {
   add('lacquer', new THREE.BoxGeometry(0.03, 0.03, 0.68).rotateX(-0.869).translate(0, 0.36, 0.78)); // 踏板架斜撑
   for (const x of [-0.065, 0, 0.065]) add('brass', box(0.042, 0.012, 0.12, x, 0.07, 0.43));
 
-  // 琴凳：皮面、黑漆框、四条腿、两侧的调高旋钮（琴手坐的地方）
+  // 琴凳：皮面、黑漆框、四条腿、两侧的调高旋钮（琴手坐的地方）；单独成一个物体
+  const B = [];
   const b = -PIANO.benchOffset;
-  add('leather', box(0.56, 0.055, 0.34, 0, PIANO.benchHeight - 0.028, b));
-  add('lacquer', box(0.58, 0.07, 0.36, 0, PIANO.benchHeight - 0.09, b));
+  B.push(['leather', box(0.56, 0.055, 0.34, 0, PIANO.benchHeight - 0.028, b)]);
+  B.push(['lacquer', box(0.58, 0.07, 0.36, 0, PIANO.benchHeight - 0.09, b)]);
   for (const sx of [-1, 1]) {
-    for (const sz of [-1, 1]) add('lacquer', box(0.045, PIANO.benchHeight - 0.12, 0.045, sx * 0.25, (PIANO.benchHeight - 0.12) / 2, b + sz * 0.14));
-    add('lacquer', new THREE.CylinderGeometry(0.035, 0.035, 0.03, 16).rotateZ(Math.PI / 2).translate(sx * 0.305, PIANO.benchHeight - 0.09, b));
+    for (const sz of [-1, 1]) B.push(['lacquer', box(0.045, PIANO.benchHeight - 0.12, 0.045, sx * 0.25, (PIANO.benchHeight - 0.12) / 2, b + sz * 0.14)]);
+    B.push(['lacquer', new THREE.CylinderGeometry(0.035, 0.035, 0.03, 16).rotateZ(Math.PI / 2).translate(sx * 0.305, PIANO.benchHeight - 0.09, b)]);
   }
-  return P;
+  return { body: P, bench: B };
 }
 
-/**
- * 按给定的世界矩阵摆好几架钢琴，按材质合并成网格。
- * @param {THREE.Matrix4[]} matrices 每架钢琴自身坐标 → 世界
- */
-export function buildPianos(matrices) {
-  const parts = buildParts();
+/** 同一材质的零件合并成一个网格 */
+function byMaterial(parts) {
   const byKey = new Map();
-  for (const m of matrices) {
-    for (const [key, geo] of parts) {
-      const g = (geo.index ? geo.toNonIndexed() : geo.clone()).applyMatrix4(m);
-      if (!byKey.has(key)) byKey.set(key, []);
-      byKey.get(key).push(g);
-    }
+  for (const [key, geo] of parts) {
+    if (!byKey.has(key)) byKey.set(key, []);
+    byKey.get(key).push(geo.index ? geo.toNonIndexed() : geo);
   }
-  const group = new THREE.Group();
-  group.name = '钢琴';
-  for (const [key, list] of byKey) {
+  return [...byKey].map(([key, list]) => {
     const mesh = new THREE.Mesh(mergeGeometries(list), M[key]);
     // 细小的琴弦、弦轴不投影（省阴影贴图的绘制，也没有可见的影子）
     mesh.castShadow = !['steel', 'copper', 'felt'].includes(key);
     mesh.receiveShadow = true;
-    group.add(mesh);
-  }
-  return group;
+    return mesh;
+  });
+}
+
+/**
+ * 按给定的矩阵摆好几架钢琴。每架琴身、每张琴凳各是一个物体（几何体几架共用）：
+ * 入场走位（walkPaths.js）按乐团组里每个网格的包围盒绕开道具，琴身和琴凳分开，琴手才能从琴凳侧面坐进去。
+ * @param {THREE.Matrix4[]} matrices 每架钢琴自身坐标 → 世界
+ * @returns {THREE.Object3D[]}
+ */
+export function buildPianos(matrices) {
+  const { body, bench } = buildParts();
+  const parts = [['钢琴', byMaterial(body)], ['琴凳', byMaterial(bench)]];
+  const out = [];
+  matrices.forEach((matrix, i) => {
+    for (const [name, meshes] of parts) {
+      const g = new THREE.Group();
+      g.name = `${name} ${i + 1}`;
+      matrix.decompose(g.position, g.quaternion, g.scale);
+      for (const mesh of meshes) g.add(mesh.clone());
+      out.push(g);
+    }
+  });
+  return out;
 }
