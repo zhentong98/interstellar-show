@@ -11,13 +11,14 @@
 //   - #poseMusician / #placeInstrument：这些声部转给 WindPlayers.pose / place
 //   - update()：每帧 WindPlayers.update() 推进换气、休息、手指
 //
-// 动作全部是程序化的（公开版没有动作捕捉），沿用 humans/pose.js 的姿态和 IK：
+// 动作全部是程序化的（公开版没有动作捕捉），沿用 humans/pose.js 的姿态和 IK，节奏跟着全团共用的拍子
+// （orchestra.js 的 beat，弦乐弓法、身体随乐句的起伏用的也是它）：
 //   - 乐器的吹口 / 哨片 / 号嘴贴在嘴唇上（嘴的位置按每个扫描人物的脸测一次），角度跟着上身走；
 //     双手的握点写在乐器自己的坐标里，所以手永远握在乐器上
-//   - 管乐手按乐句换气：乐句结束时短暂吸气，胸口抬起、肩膀微耸、头微微上扬，乐器离开嘴唇一两厘米；
-//     安静段落偶尔把乐器放到腿上歇几秒（后排烘焙的乐手只跟随全体举起 / 放下，免得烘焙姿势来回跳）
-//   - 手指按音符的节奏一根根起落，快慢随演奏强度；身体随乐句前后微摆
-//   - 钢琴手双手在键盘上左右移动弹琶音，按键时手腕下沉
+//   - 同一声部在乐句交界处一起换气：胸口抬起、肩膀微耸、头微微上扬，乐器离开嘴唇一两厘米；
+//     安静段落偶尔把乐器放到腿上歇一两个乐句（烘焙的后排乐手只跟随全体举起 / 放下，免得烘焙姿势来回跳）
+//   - 手指按音符一根根起落（一拍一个音到四个十六分音符，随强度），偶尔抬眼看指挥
+//   - 钢琴手双手在键盘上跟着拍子左右移动弹琶音，每个八分音符按一下键
 
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
@@ -25,7 +26,6 @@ import { damp, lerp, clamp01, range, seededRandom } from '../core/math.js';
 import { STAGE_Y, PODIUM, WINGS, WOODWINDS, HORNS, PIANOS } from './layout.js';
 import { createLook } from './humans/body.js';
 import { poseBody, gripArm, toWorld, chestFrame } from './humans/pose.js';
-import { rotateWorld } from './humans/rig.js';
 import { fluteGeometry, oboeGeometry, clarinetGeometry, bassoonGeometry, hornGeometry, HORN } from './instruments.js';
 import { buildPianos, PIANO } from './piano.js';
 
@@ -70,7 +70,7 @@ export function windMusicians(base, rand) {
   });
   // 全部用带完整骨骼的写实模型（前排）：圆号如果走烘焙，四个人物各烘三个姿势，反而比蒙皮模型画得多
   WOODWINDS.rows.forEach((r, i) => row(r, r.sections, { entry: WINGS.right, depth: 1 - 0.1 * i, front: true }));
-  // 圆号和钢琴手离所有特写机位都远：落座后隔帧更新姿态（见 WindPlayers.pose）
+  // 圆号和钢琴手离所有特写机位都远：落座后隔帧更新姿态（halfRate，orchestra.js 的 update 按它跳帧）
   row(HORNS.row, ['horn', 'horn', 'horn', 'horn'], { entry: WINGS.left, depth: 0.85, front: true, halfRate: true });
   PIANOS.forEach((p, i) => list.push(base({
     section: 'piano',
@@ -176,7 +176,6 @@ const KINDS = {
     poles: { play: { Left: [0.25, 0.75, 0.4], Right: [-0.65, 1.0, 0.05] }, rest: { Left: [0.5, 0.9, -0.2], Right: [-0.5, 0.9, -0.2] } },
     curl: { play: [0.95, 1.05, 0.6], rest: [0.6, 0.7, 0.4] },
     body: { twist: -0.15, headYaw: 0.18, headPitch: 0.04, headRoll: -0.1, lean: 0.03 },
-    phrase: [3, 6],
   },
   oboe: {
     // 双簧管比单簧管更贴近身体（约 40°），头略低
@@ -194,7 +193,6 @@ const KINDS = {
     poles: { play: { Left: [0.5, 0.85, -0.05], Right: [-0.5, 0.8, -0.05] }, rest: { Left: [0.5, 0.9, -0.2], Right: [-0.5, 0.9, -0.2] } },
     curl: { play: [0.85, 0.95, 0.5], rest: [0.9, 1.0, 0.6] },
     body: { headPitch: 0.12, lean: 0.06 },
-    phrase: [4.5, 8],
   },
   clarinet: {
     // 单簧管约 45° 斜向前下，喇叭口在两膝之间
@@ -211,7 +209,6 @@ const KINDS = {
     poles: { play: { Left: [0.55, 0.85, -0.05], Right: [-0.55, 0.8, -0.05] }, rest: { Left: [0.5, 0.9, -0.2], Right: [-0.5, 0.9, -0.2] } },
     curl: { play: [0.8, 0.9, 0.5], rest: [0.9, 1.0, 0.6] },
     body: { headPitch: 0.1, lean: 0.06 },
-    phrase: [4, 7.5],
   },
   bassoon: {
     // 大管斜挂在身前：靴形管在右大腿外侧（坐着时用座带托住），喇叭口在头的左上方，S 形吹管弯回嘴边
@@ -227,7 +224,6 @@ const KINDS = {
     poles: { play: { Left: [0.5, 1.0, -0.1], Right: [-0.55, 0.75, -0.15] }, rest: { Left: [0.5, 1.0, -0.1], Right: [-0.55, 0.75, -0.15] } },
     curl: { play: [0.8, 0.9, 0.5], rest: [0.8, 0.9, 0.5] },
     body: { headPitch: 0.04, lean: 0.04 },
-    phrase: [4, 7.5],
   },
   horn: {
     // 圆号的几何体按演奏时的胸腔坐标建，再绕号嘴往下转一点：盘管在右胸前偏低，喇叭口落到右胯旁、搭在大腿上
@@ -240,7 +236,6 @@ const KINDS = {
     poles: { play: { Left: [0.55, 0.9, -0.1], Right: [-0.6, 0.8, -0.35] }, rest: { Left: [0.55, 0.9, -0.1], Right: [-0.6, 0.8, -0.35] } },
     curl: { play: [0.6, 0.7, 0.45], rest: [0.6, 0.7, 0.45] },
     body: { headPitch: 0.06, lean: 0.05 },
-    phrase: [3, 6],
   },
 };
 // 大管、圆号放下时手也留在乐器上
@@ -262,7 +257,7 @@ function hornGrips() {
 }
 
 /** 钢琴手：身体前倾、低头看键盘 */
-const PIANIST = { lean: 0.1, headPitch: 0.24, curl: [0.55, 0.7, 0.4], poles: { Left: [0.5, 0.75, -0.2], Right: [-0.5, 0.75, -0.2] } };
+const PIANIST = { lean: 0.1, headPitch: 0.24, curl: [0.55, 0.7, 0.4], curlRest: [0.3, 0.4, 0.25], poles: { Left: [0.5, 0.75, -0.2], Right: [-0.5, 0.75, -0.2] } };
 
 // ——— 嘴的位置 ———
 
@@ -308,7 +303,10 @@ function measureMouth(character) {
 
 function mouthWorld(rig, character, out) {
   const local = character ? (character.mouth ??= measureMouth(character)) : PROCEDURAL_MOUTH;
-  return rig.bones.Head.localToWorld(out.copy(local));
+  // IK 不再逐次刷新整棵骨骼树（humans/rig.js），读头骨骼的世界矩阵前先沿父链刷新一次
+  const head = rig.bones.Head;
+  head.updateWorldMatrix(true, false);
+  return head.localToWorld(out.copy(local));
 }
 
 // ——— 演奏 ———
@@ -328,30 +326,15 @@ function blend(out, a, b, k) {
 
 const grip = () => ({ center: new THREE.Vector3(), dir: new THREE.Vector3(), palm: new THREE.Vector3() });
 
-const _box = new THREE.Box3();
-const _bp = new THREE.Vector3();
-const _sphere = new THREE.Sphere();
-const _inv = new THREE.Matrix4();
-
 /**
- * 写实模型重新打开视锥剔除（cast.js 为了保险全部关掉了）：包围球每帧由骨骼位置算出来（外扩 0.3 米包住皮肉、头发、衣服），
- * 再换算到各网格自己的坐标里。坐、站、走、举乐器都准确，也不用逐顶点蒙皮。
- * 这样照不到这些乐手的阴影贴图（合唱区顶光、指挥追光）就不再画他们，新加的 14 位乐手每帧少画一百多次。
- * 程序化人体本来就很轻，不处理。
+ * 管乐手的换气、休息、按键都跟着全团共用的拍子（orchestra.js 的 beat，和弦乐弓法、身体随乐句的起伏同一个拍子）：
+ *   - 乐句按小节划分，同一声部在乐句交界处一起换气（每人早晚差零点几拍）；越响乐句越短
+ *   - 安静段落里，乐句交界处有时放下乐器歇一两个乐句，下一个交界处先吸一口气再举起来
+ *   - 手指按音符起落：安静时一拍一个音，激烈时四个十六分音符
+ * 调音时拍子不走，按秒计时吹长音、偶尔换气。
  */
-function updateBounds(rig) {
-  if (!rig.meshes) return;
-  _box.makeEmpty();
-  for (const b of rig.list) _box.expandByPoint(_bp.setFromMatrixPosition(b.matrixWorld));
-  _box.getBoundingSphere(_sphere);
-  _sphere.radius += 0.3;
-  for (const mesh of rig.meshes) {
-    if (!mesh.isSkinnedMesh) continue;
-    mesh.boundingSphere ??= new THREE.Sphere();
-    mesh.boundingSphere.copy(_sphere).applyMatrix4(_inv.copy(mesh.matrixWorld).invert());
-    mesh.frustumCulled = true;
-  }
-}
+const PHRASE_BEATS = { flute: [8, 4], oboe: [8, 8], clarinet: [8, 8], bassoon: [8, 4], horn: [8, 4] };
+const SECTION_LAG = { flute: 0, oboe: 0.12, clarinet: -0.1, bassoon: 0.06, horn: -0.05, piano: 0 };
 
 export class WindPlayers {
   constructor(musicians) {
@@ -360,14 +343,16 @@ export class WindPlayers {
     KINDS.horn.grips ??= hornGrips();
     for (const m of this.members) {
       m.wind = {
-        phraseLeft: range(this.rand, 0.5, 4),
+        lag: SECTION_LAG[m.section] + range(this.rand, -0.12, 0.12), // 换气比拍点早晚多少拍
+        phraseIndex: null,
+        restUntil: -1,
+        tuneLeft: range(this.rand, 1, 4),
         breathT: -1,
         breathDur: 0.6,
         breath: 0,
         rest: 0,
         restTarget: 0,
-        restLeft: 0,
-        noteLeft: 0,
+        note: null,
         finger: new Float32Array(8),
         fingerTarget: new Float32Array(8),
       };
@@ -376,122 +361,114 @@ export class WindPlayers {
     this.tmp = {
       chest: new THREE.Matrix4(), local: new THREE.Matrix4(), play: new THREE.Matrix4(), rest: new THREE.Matrix4(), M: new THREE.Matrix4(),
       piano: new THREE.Matrix4(), p: V(), q: new THREE.Quaternion(), q2: new THREE.Quaternion(), s: V(), mouth: V(), off: V(),
-      g: [grip(), grip(), grip()], c: V(), d: V(), n: V(), pole: V(), hx: V(), hy: V(), hz: V(), fwd: V(), rq: new THREE.Quaternion(),
-      curl: { curl: [0, 0, 0], thumb: 0.35 },
+      g: [grip(), grip(), grip()], c: V(), d: V(), n: V(), pole: V(), rq: new THREE.Quaternion(),
+      grip: { curl: [0, 0, 0], thumb: 0.35, fingers: [1, 1, 1, 1], mitten: 1 },
     };
+    this.beat = 0;
   }
 
   owns(m) {
     return OWN.has(m.section);
   }
 
-  /** 每帧：换气、休息、手指（只影响前排；后排烘焙的乐手不单独休息） */
-  update(dt, perf, tuning) {
-    this.tick = (this.tick ?? 0) + 1;
+  /** 每帧：换气、休息、手指。beat 是全团共用的拍子（演奏时才走） */
+  update(dt, perf, tuning, beat = 0) {
+    this.beat = beat;
     const r = this.rand;
     const k = perf.playing ? perf.intensity ?? 0 : 0;
     for (const m of this.members) {
       const s = m.wind;
       const sounding = m.present && m.raise > 0.5 && (perf.playing || tuning);
-      if (!sounding) {
+      if (s.breathT >= 0) {
+        s.breathT += dt / s.breathDur;
+        if (s.breathT >= 1) s.breathT = -1;
+      }
+      const breathe = (min, max) => {
+        s.breathT = 0;
+        s.breathDur = range(r, min, max);
+      };
+      if (!sounding || m.section === 'piano') {
         s.restTarget = 0;
-        s.restLeft = 0;
-        s.breathT = -1;
-        if (s.phraseLeft < 0.3) s.phraseLeft = range(r, 0.3, 2);
-      } else if (m.section !== 'piano') {
-        const [p0, p1] = KINDS[m.section].phrase;
-        if (s.breathT >= 0) {
-          s.breathT += dt / s.breathDur;
-          if (s.breathT >= 1) s.breathT = -1;
+        s.restUntil = -1;
+        s.phraseIndex = null;
+        if (!sounding) s.breathT = -1;
+      } else if (!perf.playing) {
+        // 调音：拍子不走，按秒吹长音，偶尔换一口气
+        if ((s.tuneLeft -= dt) <= 0) {
+          s.tuneLeft = range(r, 3, 6);
+          breathe(0.5, 0.8);
         }
-        if (s.restLeft > 0) {
-          s.restLeft -= dt;
-          if (s.restLeft <= 0) {
+      } else {
+        const [calm, loud] = PHRASE_BEATS[m.section];
+        const len = k > 0.6 ? loud : calm; // 吹得越响，一口气撑得越短
+        const index = Math.floor((beat + s.lag) / len);
+        // 一首刚开始（或缓冲后接着演）的头两个乐句大家都在吹，不马上放下
+        if (s.phraseIndex === null) s.freshUntil = index + 2;
+        if (s.phraseIndex !== null && index !== s.phraseIndex) {
+          if (s.restUntil > index) {
+            // 还在休息
+          } else if (s.restTarget === 1) {
             // 歇够了：举起来，先吸一口气再进
             s.restTarget = 0;
-            s.breathT = 0;
-            s.breathDur = range(r, 0.55, 0.85);
-            s.phraseLeft = range(r, p0, p1);
-          }
-        } else {
-          s.phraseLeft -= dt * (0.85 + 0.4 * k); // 吹得越响，一口气撑得越短
-          if (s.phraseLeft <= 0 && s.breathT < 0) {
-            // 乐句结束：安静段落有时放下乐器歇几秒，否则换一口气接着吹
-            const restChance = m.baked || tuning ? 0 : clamp01(0.5 - 0.6 * k);
-            if (r() < restChance) {
-              s.restTarget = 1;
-              s.restLeft = range(r, 2.5, 6);
-            } else {
-              s.breathT = 0;
-              s.breathDur = range(r, 0.45, 0.75);
-            }
-            s.phraseLeft = range(r, p0, p1);
+            breathe(0.55, 0.85);
+          } else if (!m.baked && index > s.freshUntil && r() < clamp01(0.45 - 0.6 * k)) {
+            // 安静段落：放下乐器歇一两个乐句（后排烘焙的乐手不单独休息，免得姿势来回跳）
+            s.restTarget = 1;
+            s.restUntil = index + (r() < 0.6 ? 1 : 2);
+          } else {
+            breathe(0.45, 0.7);
           }
         }
+        s.phraseIndex = index;
       }
       s.rest = damp(s.rest, s.restTarget, 2.4, dt);
       s.breath = s.breathT >= 0 ? Math.sin(Math.PI * s.breathT) ** 2 : 0;
-      // 手指：按音符的节奏起落；调音（长音）、换气、休息时不动
-      const fingering = sounding && !tuning && s.restTarget === 0 && s.breathT < 0;
-      s.noteLeft -= dt;
-      if (s.noteLeft <= 0) {
-        s.noteLeft = range(r, 0.12, 0.45) / (0.6 + 1.0 * k);
-        for (let i = 0; i < 8; i++) s.fingerTarget[i] = fingering ? range(r, -0.28, 0.14) : 0;
+      // 手指：按音符起落；调音（长音）、换气、休息时不动
+      const fingering = sounding && perf.playing && s.restTarget === 0 && s.breathT < 0;
+      const perBeat = k < 0.3 ? 1 : k < 0.65 ? 2 : 4;
+      const note = Math.floor((beat + s.lag * 0.5) * perBeat);
+      if (note !== s.note || !fingering) {
+        s.note = note;
+        for (let i = 0; i < 8; i++) s.fingerTarget[i] = fingering ? range(r, -0.15, 0.1) : 0;
       }
       for (let i = 0; i < 8; i++) s.finger[i] = damp(s.finger[i], s.fingerTarget[i], 26, dt);
     }
   }
 
-  /** 身体：坐 / 站 / 走、演奏时的前倾和转头、换气时的吸气 */
+  /** 身体：坐 / 站 / 走、演奏时的前倾和转头、偶尔抬眼看指挥、换气时的吸气 */
   pose(m, t, perf) {
     const rig = m.rig;
     const s = m.baked ? IDLE : m.wind;
     const walking = m.walk > 0 && m.walk < 1;
-    if (!m.baked) {
-      // 远处的乐手（圆号、钢琴）隔帧更新：跳过的那一帧骨骼和乐器都保持上一帧的样子
-      s.skip = !!m.halfRate && !walking && s.posedRig === rig && (m.index + this.tick) % 2 === 1;
-      if (s.skip) return;
-      s.posedRig = rig;
-    }
     const yaw = walking ? Math.atan2(m.seat.x - m.entry.x, m.seat.z - m.entry.z) : m.yaw;
     rig.root.position.copy(m.pos);
     rig.root.rotation.set(0, yaw, 0);
     const play = m.raise * (1 - s.rest);
     const B = m.section === 'piano' ? PIANIST : KINDS[m.section].body;
-    const k = perf.playing ? perf.intensity ?? 0 : 0;
-    // 随乐句前后微摆，越响幅度越大
-    const swell = s === IDLE ? 0 : Math.sin(t * (0.7 + 0.5 * k) * m.rate + m.phase) * (0.015 + 0.035 * k) * m.amp * play;
     const inhale = s.breath;
+    const glance = (m.glance ?? 0) * play;
+    // 身体随乐句的起伏已经在 m.lean 里（orchestra.js 按全团的拍子算）；这里只加演奏姿势和吸气
     poseBody(rig, {
       sit: m.sit,
       seat: m.seatHeight,
-      lean: m.lean + (B.lean ?? 0) * play + swell - 0.03 * inhale,
+      lean: m.lean + (B.lean ?? 0) * play - 0.03 * inhale,
       bow: m.bow,
       twist: (B.twist ?? 0) * play,
       headYaw: m.headYaw * (1 - play) + (B.headYaw ?? 0) * play,
-      headPitch: (B.headPitch ?? 0) * play - 0.05 * inhale,
+      headPitch: (B.headPitch ?? 0) * play - 0.08 * glance - 0.05 * inhale,
       headRoll: (B.headRoll ?? 0) * play,
       walk: walking ? 1 : 0,
       phase: m.walkPhase,
-      // 吸气：胸口抬起（脊柱最上一节后仰）；平时是很轻的呼吸
+      // 吸气：胸口抬起（脊柱最上一节后仰）、两肩微耸；平时是很轻的呼吸
       breathe: inhale > 0.01 ? -Math.PI / 2 : t * 1.1 + m.phase,
       breatheAmp: inhale > 0.01 ? 0.05 * inhale : 0.01,
+      shrug: 0.08 * inhale,
       keepUpper: m.keepUpper,
     });
-    if (inhale > 0.01) this.#shrug(rig, 0.08 * inhale);
-  }
-
-  /** 吸气时肩膀微耸：锁骨绕身体前后轴转一点 */
-  #shrug(rig, a) {
-    const T = this.tmp;
-    const fwd = T.fwd.set(0, 0, 1).applyQuaternion(rig.root.getWorldQuaternion(T.rq));
-    if (rig.bones.LeftShoulder) rotateWorld(rig.bones.LeftShoulder, fwd, a);
-    if (rig.bones.RightShoulder) rotateWorld(rig.bones.RightShoulder, fwd, -a);
   }
 
   /** 乐器和双手 */
   place(m, t, perf, write) {
-    if (m.wind?.skip && !m.baked) return;
     if (m.section === 'piano') return this.#placePianist(m, t, perf);
     const K = KINDS[m.section];
     const rig = m.rig;
@@ -528,11 +505,27 @@ export class WindPlayers {
       const pp = K.poles.play[side];
       const pr = K.poles.rest[side];
       const pole = toWorld(rig, lerp(pr[0], pp[0], play), lerp(pr[1], pp[1], play), lerp(pr[2], pp[2], play), T.pole);
-      for (let j = 0; j < 3; j++) T.curl.curl[j] = lerp(K.curl.rest[j], K.curl.play[j], play);
-      gripArm(rig, side, c, d.normalize(), n.normalize(), pole.clone(), T.curl);
-      if (!m.baked) this.#wiggle(rig, side, d, n, s, sx, play * (1 - s.breath));
+      const g = this.#grip(s, sx, play * (1 - s.breath), K.curl.rest, K.curl.play, play);
+      gripArm(rig, side, c, d.normalize(), n.normalize(), pole.clone(), g);
     }
-    if (!m.baked) updateBounds(rig);
+  }
+
+  /**
+   * 握法：三节弯曲按演奏程度在放下 / 演奏之间插值，每根手指再按音符起落（gripArm 的 fingers 倍数，
+   * 正的 finger 值按下去、负的抬起来）；只有一根指骨的模型四指一起动（mitten）。
+   */
+  #grip(s, sx, amount, rest, playCurl, play) {
+    const g = this.tmp.grip;
+    for (let j = 0; j < 3; j++) g.curl[j] = lerp(rest[j], playCurl[j], play);
+    let sum = 0;
+    for (let f = 0; f < 4; f++) {
+      // 手指离按键只抬一两厘米：弯曲倍数在 0.75～1.2 之间变化
+      const v = s.finger[f + (sx > 0 ? 0 : 4)] * amount;
+      g.fingers[f] = 1 + 1.8 * v;
+      sum += v;
+    }
+    g.mitten = 1 + 1.2 * (sum / 4);
+    return g;
   }
 
   /** 握点换算到世界坐标：乐器上的点跟着乐器，'lap' / 'side' 跟着身体 */
@@ -556,22 +549,10 @@ export class WindPlayers {
     return out;
   }
 
-  /** 手指一根根起落：绕"手指 × 掌心"的轴，正值是按下去、负值是抬起来 */
-  #wiggle(rig, side, dir, palm, s, sx, amount) {
-    const hand = rig.hands?.[side];
-    if (!hand?.fingers.length || amount < 0.02) return;
-    const T = this.tmp;
-    const x = T.hx.copy(dir).normalize();
-    const y = T.hy.copy(palm).addScaledVector(x, -palm.dot(x)).normalize();
-    const axis = T.hz.crossVectors(x, y).normalize();
-    hand.fingers.forEach((chain, i) => {
-      const a = s.finger[(i + (sx > 0 ? 0 : 4)) % 8] * amount;
-      rotateWorld(chain[0], axis, a);
-      if (chain[1]) rotateWorld(chain[1], axis, a * 0.6);
-    });
-  }
-
-  /** 钢琴手：左手在低音区、右手在高音区，弹琶音时左右移动，按键时手腕下沉；放下时手放在腿上 */
+  /**
+   * 钢琴手：跟着全团的拍子弹琶音——左手在低音区、右手在高音区，两拍一个来回地左右移动，
+   * 每个八分音符按一下键（手腕下沉），强度越大跨度越大；放下时手放在腿上。
+   */
   #placePianist(m, t, perf) {
     const rig = m.rig;
     const T = this.tmp;
@@ -583,10 +564,11 @@ export class WindPlayers {
     const play = m.raise;
     const k = perf.playing ? perf.intensity ?? 0 : 0;
     const live = !m.baked && perf.playing;
+    const beat = this.beat + (m.pianoIndex ?? 0) * 0.5; // 两架琴错开半拍，像两个声部
     for (const [side, sx] of SIDES) {
-      const ph = t * (2.2 + 2.6 * k) * m.rate + m.phase + (sx > 0 ? 0 : 1.9);
+      const ph = Math.PI * beat + (sx > 0 ? 0 : 1.9);
       const x = sx * 0.2 + (live ? Math.sin(ph) * (0.04 + 0.14 * k) : 0);
-      const press = live ? Math.max(0, Math.sin(ph * 2.7)) * 0.01 * (0.4 + k) : 0;
+      const press = live ? Math.max(0, Math.sin(Math.PI * 2 * beat + (sx > 0 ? 0 : 1))) * 0.01 * (0.4 + k) : 0;
       const keys = T.g[0];
       keys.center.set(x, PIANO.keyTop + 0.035 - press, 0.075).applyMatrix4(P);
       keys.dir.set(0, -0.5, 1).transformDirection(P);
@@ -596,10 +578,8 @@ export class WindPlayers {
       const d = T.d.lerpVectors(lap.dir, keys.dir, play).normalize();
       const n = T.n.lerpVectors(lap.palm, keys.palm, play).normalize();
       const pp = PIANIST.poles[side];
-      for (let j = 0; j < 3; j++) T.curl.curl[j] = PIANIST.curl[j] * (0.5 + 0.5 * play);
-      gripArm(rig, side, c, d, n, toWorld(rig, pp[0], pp[1], pp[2], T.pole).clone(), T.curl);
-      if (!m.baked) this.#wiggle(rig, side, d, n, s, sx, play);
+      const g = this.#grip(s, sx, play, PIANIST.curlRest, PIANIST.curl, play);
+      gripArm(rig, side, c, d, n, toWorld(rig, pp[0], pp[1], pp[2], T.pole).clone(), g);
     }
-    if (!m.baked) updateBounds(rig);
   }
 }

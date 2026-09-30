@@ -1,12 +1,12 @@
 // 乐团：约 40 人弦乐（左侧四道弧）、30 人合唱（右后方台阶）、4 架定音鼓（右前方）、管风琴手（中央控制台）。
 // 木管 8 人（指挥正前方偏右的两层台阶）、圆号 4 支（弦乐后方台阶）、钢琴 2 架（左后角）在 winds.js，这里只留接入的钩子。
 //
-// 每位乐手都有一副按 Mixamo 命名的骨骼（humans/rig.js），用 IK 摆姿势：
-//   - 拉弓的右手追着弓根走，按弦的左手握着琴颈，弓毛始终压在琴马附近的弦上
-//   - 合唱团双手捧着打开的谱夹，随乐句呼吸；鼓手先抬槌再落下；管风琴手双手在键盘上
+// 每位乐手都有一副按 Mixamo 命名的骨骼（humans/rig.js），用 IK 摆姿势；每一帧手该到哪由 humans/playing.js 的"分谱"给出：
+//   - 弦乐按声部统一弓法：弓毛贴在琴马和指板之间的弦上，右手追着弓根走，左手握琴颈换把、揉弦
+//   - 合唱团双手捧着谱夹，随乐句呼吸、偶尔抬头看指挥；鼓手按拍单击、滚奏、重击前抬槌；管风琴手按拍换和弦
 // 渲染分两种：
-//   - 前排（第一、二道弧的弦乐、定音鼓手、管风琴手）：SkinnedMesh，完整骨骼
-//   - 后排（第三、四道弧和合唱团）：身体部件做成 InstancedMesh，矩阵直接取骨骼的世界矩阵
+//   - 完整骨骼（弦乐全部、合唱团第一排、定音鼓手、管风琴手）：SkinnedMesh；离镜头远的后两道弧和合唱团隔帧更新
+//   - 烘焙（合唱团后两排；没有写实模型时的程序化后排）：同一人物同一姿势只烘焙一次，做成 InstancedMesh
 // 乐器全部是实例化的程序化 PBR 模型（instruments.js）。
 //
 // 对外接口与里程碑 1 相同：walkOn / snapSeated / standConcertmaster / setTuning / setReady /
@@ -19,6 +19,7 @@ import { STAGE_Y, PODIUM, WINGS, ORGAN_CONSOLE } from './layout.js';
 import { Rig } from './humans/rig.js';
 import { createLook, buildSkinnedBody, Crowd } from './humans/body.js';
 import { poseBody, poseArm, gripArm, restArms, toWorld, chestFrame } from './humans/pose.js';
+import { BowSection, updateLeftHand, updateGlance, TimpaniPart, OrganPart } from './humans/playing.js';
 import { ModelRig } from './humans/modelRig.js';
 import { pickCharacter } from './humans/cast.js';
 import { bakePose } from './humans/bake.js';
@@ -90,11 +91,12 @@ function choirSpots() {
 /** 定音鼓手的位置；四架鼓以他为圆心、朝指挥方向排成弧形 */
 const TIMPANIST = new THREE.Vector3(4.9, STAGE_Y, -4.3);
 const TIMPANI_FACING = Math.atan2(PODIUM.x - TIMPANIST.x, PODIUM.z + 0.4 - TIMPANIST.z);
+// 相邻两面鼓的鼓圈留几厘米空隙（原来的角度让鼓圈互相压住），两侧的大鼓、小鼓绕到鼓手身侧，和真实的弧形摆法一样
 export const TIMPANI = [
-  { a: -0.95, r: 0.42 },
-  { a: -0.32, r: 0.38 },
-  { a: 0.32, r: 0.35 },
-  { a: 0.95, r: 0.32 },
+  { a: -1.3, r: 0.42 },
+  { a: -0.44, r: 0.38 },
+  { a: 0.4, r: 0.35 },
+  { a: 1.22, r: 0.32 },
 ].map(({ a, r }) => ({
   x: TIMPANIST.x + Math.sin(TIMPANI_FACING + a) * 0.98,
   z: TIMPANIST.z + Math.cos(TIMPANI_FACING + a) * 0.98,
@@ -113,19 +115,22 @@ function frame(origin, axis, up) {
 }
 
 const POSES = {
-  // 小提琴：演奏时在胸腔坐标里（原点在脖子根部），夹在左肩、琴头指向左前方
-  violinPlay: frame([0.06, -0.02, 0.075], [0.55, 0.02, 0.83], [-0.35, 0.93, 0.1]),
+  // 小提琴：演奏时在胸腔坐标里（原点在脖子根部）。琴背搁在左锁骨上、腮托在下巴左下方，
+  // 琴头指向左前方并微微上扬，面板向右倾约 33°（弓毛才能贴着弦、右臂自然下垂）
+  violinPlay: frame([0.07, -0.035, 0.05], [0.68, 0.16, 0.72], [-0.55, 0.83, 0.05]),
   violinSeated: frame([0.14, 0.6, 0.3], [0, 1, 0.12], [-0.3, 0, 1]),
   violinStanding: frame([0.27, 0.4, 0.14], [0, 1, 0.1], [0, 0, 1]),
   bowSeated: frame([-0.17, 0.58, 0.3], [0, 1, 0.1], [0, -0.1, 1]),
   bowStanding: frame([-0.26, 0.86, 0.1], [0, -1, 0.12], [0, 0.12, 1]),
-  // 大提琴：琴尾柱点地，琴身夹在两膝之间向后靠
-  celloPlay: frame([0, 0.16, 0.52], [0, 0.93, -0.37], [0, 0.37, 0.93]),
+  // 大提琴：尾柱在身前 0.6 米处点地，琴身夹在两膝之间向后靠约 26°，
+  // 琴颈从左耳旁边经过（不挡脸），面板稍微转向右边，方便右手运弓
+  celloPlay: frame([0.078, 0.24, 0.45], [0.13, 0.9, -0.435], [-0.15, 0.43, 0.89]),
   celloStanding: frame([0.36, 0.02, 0.22], [0, 1, -0.04], [0, 0.04, 1]),
-  bassPlay: frame([0.04, 0.08, 0.46], [0, 0.96, -0.27], [0, 0.27, 0.96]),
+  // 低音提琴：坐高凳，琴几乎竖直（约 14°），靠在左腿内侧，琴颈在头的左边
+  bassPlay: frame([0.13, 0.28, 0.36], [0.08, 0.97, -0.23], [-0.25, 0.25, 0.93]),
   bassStanding: frame([0.4, 0.02, 0.25], [0, 1, -0.04], [0, 0.04, 1]),
-  // 合唱谱夹：捧在胸前、页面朝向脸；放下时拿在身侧
-  folderUp: frame([0, 1.12, 0.32], [0, 0.6, -0.8], [0, 0.8, 0.6]),
+  // 合唱谱夹：捧在胸前、页面朝向脸（胸腔坐标，随呼吸和身体前倾一起动）；放下时拿在身侧
+  folderUp: frame([0, -0.26, 0.3], [0, 0.6, -0.8], [0, 0.8, 0.6]),
   folderDown: frame([0.25, 0.8, 0.06], [0, 0.2, -1], [0, 1, 0.2]),
 };
 
@@ -166,13 +171,32 @@ const BAKE_POSES = {
 };
 const BOWED_SMALL = ['violin1', 'violin2', 'viola'];
 
-/** 握法：手指三节的弯曲（弧度）和拇指 */
+/**
+ * 握法：手指三节的弯曲（弧度）和拇指。
+ * mitten：女性扫描模型四指共用一条指骨链（像连指手套），四指只能一起弯，单独给一个更克制的倍数，
+ * 免得按弦时整只手攥成拳头、握弓时手指像一块板。
+ */
 const GRIP = {
-  neck: { curl: [0.75, 0.95, 0.6], thumb: 0.35 }, // 按弦：手指弯过指板
-  bow: { curl: [0.45, 0.6, 0.35], thumb: 0.5 }, // 握弓：手指搭在弓杆上
-  mallet: { curl: [0.9, 1.1, 0.7], thumb: 0.45 }, // 握槌：半握拳
-  folder: { curl: [0.45, 0.6, 0.4], thumb: 0.25 }, // 捏谱夹：手指绕到背面
+  neck: { curl: [0.75, 0.95, 0.6], thumb: 0.35, mitten: 1 }, // 按弦：手指弯过指板
+  bow: { curl: [0.45, 0.6, 0.35], thumb: 0.5, mitten: 0.8, fingers: [0.9, 1, 1.05, 0.6] }, // 握弓：手指搭在弓杆上，小指立在弓杆上
+  mallet: { curl: [0.9, 1.1, 0.7], thumb: 0.45, mitten: 0.85, fingers: [0.8, 1, 1.05, 1.1] }, // 握槌：拇指和食指捏住，后三指松松包着
+  folder: { curl: [0.45, 0.6, 0.4], thumb: 0.25, mitten: 0.75 }, // 捏谱夹：手指绕到背面
+  keys: { curl: [0.35, 0.55, 0.3], thumb: 0.2, mitten: 0.6 }, // 管风琴：手指弯成弧形放在键上
 };
+
+/** 各乐器的尺寸倍数（相对小提琴的几何体）和按弦、运弓的参数，单位都是小提琴几何体里的米 */
+const BASS_SCALE = 1.32;
+const STRING_X = 0.0149; // 最外侧两根弦离中线的距离
+const STRING_TOP = 0.0672; // 弦的上沿（弓毛贴在这里）
+const NECK_Z = [0.505, 0.42]; // 左手从第一把位到高把位，琴颈上的位置
+const VIBRATO = { violin: 0.0045, cello: 0.0038 }; // 揉弦幅度（大提琴几何体放大 2.1 倍后约 8 毫米）
+
+/** 烘焙姿势、还没开始拉的时候：弓在中段、左手在第一把位 */
+const REST_BOW = { u: 0.5, vel: 0, down: true };
+const REST_LEFT = { pos: 0.2, vib: 0, fingers: [1, 1, 1, 1] };
+
+/** 管风琴手用了和定音鼓手不同的起始人物，免得两个最显眼的独奏位置是同一张脸 */
+const CAST_START = { organ: 1 };
 
 export class Orchestra {
   constructor() {
@@ -181,6 +205,13 @@ export class Orchestra {
     this.rand = seededRandom(42);
     this.time = 0;
     this.onDrumImpact = null;
+    // 全团共用的拍子和各部分的"分谱"（弓法、定音鼓、管风琴），见 humans/playing.js
+    this.beat = 0;
+    this.prevBeat = 0;
+    this.bowing = Object.fromEntries(STRINGS.map((name, i) => [name, new BowSection(name, seededRandom(7 + i))]));
+    this.timpaniPart = new TimpaniPart();
+    this.timpaniPart.onContact = (drum, strength, heavy) => this.#drumContact(drum, strength, heavy);
+    this.organPart = new OrganPart(seededRandom(11));
     this.tmp = {
       m: new THREE.Matrix4(), m2: new THREE.Matrix4(), m3: new THREE.Matrix4(),
       v: new THREE.Vector3(), v2: new THREE.Vector3(), v3: new THREE.Vector3(), v4: new THREE.Vector3(),
@@ -237,7 +268,8 @@ export class Orchestra {
         yaw: faceConductor(s.x, s.z),
         entry: WINGS.left,
         depth: 1 - s.arc * 0.12, // 后排动作更小
-        front: s.arc <= 1,
+        front: true, // 弦乐全部完整骨骼：大提琴、中提琴机位里的人也要真的在拉
+        halfRate: s.arc >= 2, // 后两道弧离镜头远，隔帧更新姿态
         look: createLook(r),
       }));
     }
@@ -249,7 +281,8 @@ export class Orchestra {
         yaw: faceConductor(s.x, s.z) * 0.6,
         entry: WINGS.right,
         depth: 1 - s.row * 0.15,
-        front: false,
+        front: s.row === 0, // 第一排完整骨骼（呼吸、抬头看指挥），后两排烘焙
+        halfRate: true,
         look: createLook(r, { gown: true }),
       }));
     }
@@ -292,8 +325,6 @@ export class Orchestra {
     });
     this.concertmasterIndex = list.findIndex((m) => m.section === 'violin1');
     this.timpanist = list.find((m) => m.section === 'timpani');
-    this.timpanist.hits = [];
-    this.timpanist.lift = [0, 0];
     return list;
   }
 
@@ -400,7 +431,7 @@ export class Orchestra {
       for (const mesh of [body, hoop, head, legs, pedal]) mesh.castShadow = true;
       g.add(body, hoop, lugs, head, legs, pedal);
       this.group.add(g);
-      this.drumHeads.push({ mesh: head, flash: 0, wobble: 0, world: new THREE.Vector3(d.x, DRUM_HEAD_Y, d.z) });
+      this.drumHeads.push({ mesh: head, flash: 0, wobble: 0, r: d.r, world: new THREE.Vector3(d.x, DRUM_HEAD_Y, d.z) });
     }
 
     // 管风琴控制台：侧向摆放，三层手键盘朝向舞台右侧（琴手坐在右边面朝左），两侧是音栓
@@ -480,7 +511,7 @@ export class Orchestra {
     for (const m of this.musicians) {
       if (m.front && m.rig?.root.parent) this.group.remove(m.rig.root);
       const role = ROLE_OF[m.section];
-      counters[role] = (counters[role] ?? -1) + 1;
+      counters[role] = (counters[role] ?? (CAST_START[role] ?? 0) - 1) + 1;
       m.character = pickCharacter(cast, role, m.look.gender, counters[role]);
       if (m.front) {
         m.rig = new ModelRig(m.character, m.look.scale, cast.clips[m.seated ? 'sitIdle' : 'standIdle']);
@@ -550,6 +581,7 @@ export class Orchestra {
     }
     for (const [name, p] of Object.entries(g.poses)) {
       const on = m.present && name === pose;
+      if (on) p.used = true;
       for (const mesh of p.meshes) {
         mesh.setMatrixAt(m.bakedIndex, on ? R : zero);
         mesh.instanceMatrix.needsUpdate = true;
@@ -643,10 +675,9 @@ export class Orchestra {
     }
   }
 
-  /** 定音鼓：lead 秒后击中（先抬槌再落下） */
+  /** 定音鼓：lead 秒后重击。cue 表的重击已经按 nextHit 提前抬好槌，这里只确认落下的时刻和力度 */
   drumHit(lead = 0.18, strength = 1) {
-    const t = this.timpanist;
-    t.hits.push({ start: this.time, at: this.time + Math.max(0.12, lead), strength, hand: t.hits.length % 2, drum: 1 + (t.hits.length % 2) });
+    this.timpaniPart.hit(Math.max(0.12, lead), strength);
   }
 
   // ——— 每帧 ———
@@ -655,26 +686,37 @@ export class Orchestra {
     this.time += dt;
     const t = this.time;
     const { intensity, playing } = perf;
-    this.#updateDrums(dt);
-    this.winds.update(dt, perf, this.tuning);
+    // 全团共用的拍子：弓法、定音鼓、管风琴、身体随乐句的起伏都跟着它走；缓冲时（playing=false）停住
+    this.prevBeat = this.beat;
+    if (playing) this.beat += (dt * (perf.bpm ?? 72)) / 60;
+    const bowing = playing || this.tuning;
+    for (const sec of Object.values(this.bowing)) sec.update(dt, intensity, perf.bpm ?? 72, bowing, this.tuning);
+    this.organPart.update(dt, perf, this.beat);
+    this.#updateDrums(dt, perf);
+    this.winds.update(dt, perf, this.tuning, this.beat);
 
     this.frame = (this.frame ?? 0) + 1;
+    const bakedPoses = this.bakedGroups ? [...this.bakedGroups.values()].flatMap((g) => Object.values(g.poses)) : [];
+    for (const p of bakedPoses) p.used = false;
     for (const m of this.musicians) {
       m.sit = damp(m.sit, m.sitTarget, 5, dt);
       m.raise = damp(m.raise, m.raiseTarget, 4 * m.rate, dt);
       m.bow = damp(m.bow, m.bowTarget, 4, dt);
 
-      // 演奏：弓速随强度变化，缓冲时（playing=false）冻结
-      const bowing = m.raise > 0.5 && (playing || this.tuning);
-      const k = this.tuning ? 0.35 : intensity * m.depth;
-      if (bowing) {
-        m.strokePhase += dt * (0.35 + 1.1 * k) * m.rate;
-        const x = m.strokePhase % 2;
-        const tri = x < 1 ? x * 2 - 1 : 3 - x * 2; // 匀速拉弓，到头换向
-        m.stroke = Math.sin((tri * Math.PI) / 2) * (0.35 + 0.65 * k) * m.amp;
+      // 弦乐：从声部的弓法里取自己的弓段位置（每人差一点点时间和弓长），左手换把、揉弦、按指
+      const sec = this.bowing[m.section];
+      if (sec) {
+        this.#traits(m);
+        sec.sample(m, (m.bowNow ??= {}));
+        m.velLag = damp(m.velLag ?? 0, m.bowNow.vel, 9, dt); // 手腕比弓慢半拍：换弓时手指先"甩"过去
+        updateLeftHand(m, sec, dt, t, bowing && m.raise > 0.5);
       }
-      const sway = playing ? Math.sin(t * (0.6 + intensity) * m.rate + m.phase) * (0.03 + 0.07 * intensity) * m.amp * m.depth : 0;
+      // 身体随乐句起伏：同一段音乐大家一起呼吸（8 拍一个来回），每人相位、幅度略有不同
+      const phrase = Math.sin((this.beat / 8) * Math.PI * 2 + m.phase * 0.3);
+      const sway = playing ? phrase * (0.02 + 0.06 * intensity) * m.amp * m.depth : 0;
       m.lean = damp(m.lean, sway + (m.section === 'choir' ? 0 : 0.1 * m.raise * m.sit), 3, dt);
+      m.phrase = phrase;
+      updateGlance(m, dt, playing && m.raise > 0.5, this.rand);
 
       if (m.pageTurn >= 0) {
         m.pageTurn += dt * 1.4;
@@ -696,14 +738,19 @@ export class Orchestra {
       }
       if (m.walk > 0 && m.walk < 1) m.walkPhase += dt * 7.5;
       // 真实模型的上身动作捕捉（坐着的人用坐姿动作，站着的用站姿动作）
-      m.keepUpper = m.rig.animate ? m.rig.animate(dt) && (m.seated ? m.sit > 0.6 : m.sit < 0.4) : false;
+      // 演奏时（raise）收掉大部分待机动作：待机坐姿是放松的弯腰驼背，乐手演奏时坐得直，只留一成多的活气
+      m.keepUpper = m.rig.animate && m.rig.animate(dt) && (m.seated ? m.sit > 0.6 : m.sit < 0.4) ? 1 - 0.85 * m.raise : 0;
       // 后排（实例化、离得远）隔帧更新姿态，省一半 CPU；走路时每帧都更新
       const walking = m.walk > 0 && m.walk < 1;
-      if (!m.front && !walking && (m.index + this.frame) % 2 === 1 && m.posed) continue;
+      if ((!m.front || m.halfRate) && !walking && (m.index + this.frame) % 2 === 1 && m.posed) continue;
       m.posed = true;
       this.#poseMusician(m, t, perf);
       this.#placeInstrument(m, t, perf);
+      // 程序化人群（没有演员表时）直接读骨骼的世界矩阵，IK 不再逐次刷新整棵骨骼树，这里统一刷新一次
+      if (!m.front) m.rig.root.updateMatrixWorld(true);
     }
+    // 烘焙姿势里没人用的那一套整个隐藏：否则每个后排的人每种姿势都要画一遍（缩成一点也照样处理全部顶点）
+    for (const p of bakedPoses) for (const mesh of p.meshes) mesh.visible = p.used;
     this.crowd?.update();
     this.#writePages();
     for (const p of Object.values(this.parts)) p.instanceMatrix.needsUpdate = true;
@@ -718,20 +765,76 @@ export class Orchestra {
     rig.root.position.copy(m.pos);
     rig.root.rotation.set(0, yaw, 0);
     const choir = m.section === 'choir';
-    poseBody(rig, {
+    const small = BOWED_SMALL.includes(m.section);
+    const low = m.section === 'cello' || m.section === 'bass';
+    const k = perf.playing ? perf.intensity : 0;
+    const raise = m.raise;
+    const glance = m.glance ?? 0;
+    const body = {
       sit: m.sit,
       seat: m.seatHeight,
-      lean: m.lean + (m.section === 'organ' ? 0.18 : 0),
+      lean: m.lean,
       bow: m.bow,
-      headYaw: m.headYaw + (m.section === 'violin1' || m.section === 'violin2' || m.section === 'viola' ? 0.25 * m.raise : 0),
-      headPitch: choir ? 0.25 * m.raise : 0.12 * m.raise,
-      headRoll: BOWED_SMALL.includes(m.section) ? -0.25 * m.raise : 0,
+      headYaw: m.headYaw,
+      headPitch: 0.12 * raise,
       walk: walking ? 1 : 0,
       phase: m.walkPhase,
-      breathe: t * (choir ? 1.6 : 1.1) + m.phase,
-      breatheAmp: choir && perf.playing ? 0.02 + 0.03 * perf.intensity : 0.01,
+      breathe: t * 1.1 + m.phase,
+      breatheAmp: 0.01,
       keepUpper: m.keepUpper,
-    });
+    };
+    if (small) {
+      // 小提琴、中提琴：头歪向左边夹住琴；上身随弓微微转动（拉到弓尖时转向右边）、随乐句左右晃；
+      // 偶尔抬眼看指挥（琴夹在下巴下，头只能动一点）
+      const u = m.bowNow?.u ?? 0.5;
+      body.twist = -0.07 * (u - 0.5) * raise * m.sit;
+      body.roll = 0.035 * (m.phrase ?? 0) * k * m.amp * raise;
+      body.headYaw += 0.25 * raise * (1 - 0.3 * glance);
+      body.headPitch = (0.14 - 0.08 * glance) * raise;
+      body.headRoll = -0.25 * raise;
+    } else if (low) {
+      // 大提琴、低音提琴：两膝分开夹琴，身体向琴靠，头稍微偏右从琴颈旁边看谱和指挥
+      body.spread = (m.section === 'cello' ? 0.13 : 0.1) * raise;
+      body.lean += 0.06 * raise * m.sit;
+      body.twist = 0.05 * ((m.bowNow?.u ?? 0.5) - 0.5) * raise * m.sit;
+      body.roll = 0.03 * (m.phrase ?? 0) * k * m.amp * raise;
+      body.headYaw += -0.14 * raise * (1 - glance);
+      body.headPitch = (0.14 - 0.14 * glance) * raise;
+    } else if (choir) {
+      // 合唱：低头看谱，每句开头快速吸气（胸口抬起、肩膀微耸），然后慢慢呼出；偶尔抬头看指挥
+      const full = Math.atan2(PODIUM.x - m.seat.x, PODIUM.z + 0.4 - m.seat.z);
+      const singing = perf.playing && raise > 0.5;
+      const b = (((this.beat + m.phase * 0.05) / 4) % 1 + 1) % 1;
+      const breath = singing ? (b < 0.14 ? smoothstep(0, 0.14, b) : 1 - smoothstep(0.14, 1, b)) : 0.5 + 0.5 * Math.sin(t * 1.4 + m.phase);
+      body.breathe = Math.PI / 2;
+      body.breatheAmp = -(singing ? 0.035 + 0.025 * k : 0.012) * breath;
+      body.shrug = (singing ? 0.05 : 0.015) * breath;
+      body.headPitch = (0.28 - 0.26 * glance) * raise;
+      body.headYaw += (full - m.yaw) * glance;
+      body.roll = 0.02 * (m.phrase ?? 0) * k * m.amp;
+    } else if (m.section === 'timpani') {
+      // 定音鼓：看着鼓面，打得越重身体越往前压
+      body.lean += this.timpaniPart.lean * raise;
+      body.headPitch = (0.32 - 0.2 * glance) * raise;
+    } else if (m.section === 'organ') {
+      // 管风琴：身体前倾看谱，脚在踏板上踩低音
+      body.lean += 0.18;
+      body.headPitch = 0.1 + 0.08 * raise;
+      body.feet = this.organPart.feet;
+      body.roll = 0.03 * (m.phrase ?? 0) * k;
+    }
+    poseBody(rig, body);
+  }
+
+  /** 每位弦乐手的个人习惯：比声部慢多少、弓用得长短、把位和揉弦的差异 */
+  #traits(m) {
+    if (m.bowLag !== undefined) return;
+    const r = this.rand;
+    m.bowLag = range(r, -0.035, 0.035);
+    m.bowReach = range(r, 0.88, 1.1);
+    m.posBias = range(r, -0.06, 0.06);
+    m.vibRate = range(r, 5.2, 6.6);
+    m.vibAmp = range(r, 0.7, 1.15);
   }
 
   #hideInstrument(m) {
@@ -752,72 +855,99 @@ export class Orchestra {
     if (this.winds.owns(m)) return this.winds.place(m, t, perf, write);
     const rig = m.rig;
     const { m: M, m2, m3, v, v2, v3, v4 } = this.tmp;
+    const A = (this.tmpAxes ??= {
+      ax: new THREE.Vector3(), ay: new THREE.Vector3(), az: new THREE.Vector3(),
+      bx: new THREE.Vector3(), by: new THREE.Vector3(), bz: new THREE.Vector3(),
+      d: new THREE.Vector3(), n: new THREE.Vector3(), f: new THREE.Vector3(), p: new THREE.Vector3(),
+      q: new THREE.Quaternion(), bowRest: new THREE.Matrix4(), bow: new THREE.Matrix4(),
+    });
     const root = rig.root.matrixWorld;
     const toW = (local, out) => out.multiplyMatrices(root, local);
     const col = (mat, i, out) => out.setFromMatrixColumn(mat, i).normalize();
+    const local = (x, y, z, out) => out.set(x, y, z).applyQuaternion(rig.root.quaternion);
 
     if (STRINGS.includes(m.section)) {
       const small = BOWED_SMALL.includes(m.section);
       const bass = m.section === 'bass';
+      const viola = m.section === 'viola';
       // —— 琴 ——
       if (small) {
         blend(m2, POSES.violinStanding, POSES.violinSeated, m.sit);
         toW(m2, m3);
-        M.multiplyMatrices(chestFrame(rig, this.tmp.chest), POSES.violinPlay);
+        M.multiplyMatrices(this.#holdFrame(rig, 0.45), POSES.violinPlay);
         blend(M, m3, M, m.raise);
-        if (m.section === 'viola') M.scale(v.setScalar(1.12));
+        if (viola) M.scale(v.setScalar(1.12));
       } else {
         blend(m2, bass ? POSES.bassStanding : POSES.celloStanding, bass ? POSES.bassPlay : POSES.celloPlay, m.sit);
         toW(m2, M);
-        if (bass) M.scale(v.setScalar(1.38));
+        if (bass) M.scale(v.setScalar(BASS_SCALE));
       }
       write(small ? 'violin' : 'cello', small ? m.slot.violin : m.slot.cello, M);
-      const scaleK = small ? (m.section === 'viola' ? 1.12 : 1) : bass ? 1.38 : 1;
-      const pts = small ? VIOLIN_POINTS : null;
-      const neckLocal = small ? pts.neck : v.copy(VIOLIN_POINTS.neck).multiply(CELLO_SCALE);
-      const bridgeLocal = small ? pts.bridge : v2.copy(VIOLIN_POINTS.bridge).multiply(CELLO_SCALE);
-      const neckW = v3.copy(neckLocal).applyMatrix4(M);
-      const bridgeW = v4.copy(bridgeLocal).applyMatrix4(M);
-      const instUp = col(M, 1, new THREE.Vector3());
-      const instX = col(M, 0, new THREE.Vector3());
-      const sideX = instX.clone(); // 琴颈的侧向（左手掌心朝这边）
-      // —— 弓 ——（演奏：弓毛压在琴马处，弓尖指向演奏者左边；放下：竖着拿在右手）
-      const tipDir = small ? instX : instX.negate();
-      const contact = small ? 0.1 + 0.28 * (1 + m.stroke) : 0.12 + 0.19 * (1 + m.stroke);
-      const bowPlay = m2;
-      {
-        const z = tipDir;
-        const y = instUp;
-        const x = new THREE.Vector3().crossVectors(y, z).normalize();
-        const origin = v.copy(bridgeW).addScaledVector(y, -BOW.hairY).addScaledVector(z, -contact);
-        bowPlay.makeBasis(x, y.clone().crossVectors(z, x), z).setPosition(origin);
-      }
+      const scaleK = small ? (viola ? 1.12 : 1) : bass ? BASS_SCALE : 1;
+      // 小提琴几何体里的点 → 这件乐器的世界坐标（大提琴、低音提琴的几何体是小提琴按 CELLO_SCALE 放大的）
+      const S = small ? null : CELLO_SCALE;
+      const inst = (x, y, z, out) => (S ? out.set(x * S.x, y * S.y, z * S.z) : out.set(x, y, z)).applyMatrix4(M);
+      const ax = col(M, 0, A.ax);
+      const ay = col(M, 1, A.ay);
+      const k = perf.playing ? perf.intensity : 0.35;
+      const b = m.bowNow ?? REST_BOW;
+      const L = m.left ?? REST_LEFT;
+      const sigma = this.bowing[m.section].string; // 正在拉哪根弦（0 最高 ~ 3 最低，换弦时是小数）
+
+      // —— 弓 ——
+      // 接触点：琴马和指板之间（越强越靠近琴马），横向落在正在拉的那根弦上。
+      // 小提琴最低的弦在几何体 +x 一侧（演奏者左边）；大提琴面板朝前，最低的 C 弦在 −x 一侧（也是演奏者左边）
+      const sx = small ? 1 : -1;
+      const contact = inst(sx * STRING_X * (sigma / 1.5 - 1), STRING_TOP, 0.2 + lerp(0.042, 0.02, k), v3);
+      // 弓垂直于琴弦；换弦就是绕琴的长轴转：拉低音弦时弓尖一侧放低、弓根（右手）抬高
+      const th = (sigma - 1.5) * 0.17;
+      const d = A.d.copy(ax).multiplyScalar(sx * Math.cos(th)).addScaledVector(ay, -Math.sin(th));
+      const n = A.n.copy(ay).multiplyScalar(Math.cos(th)).addScaledVector(ax, sx * Math.sin(th));
+      const along = lerp(0.06, 0.7, b.u); // 接触点离弓根多远
+      const bowPlay = A.bow.makeBasis(v.crossVectors(n, d).normalize(), n, d)
+        .setPosition(v4.copy(contact).addScaledVector(d, -along).addScaledVector(n, -BOW.hairY));
       blend(m3, POSES.bowStanding, POSES.bowSeated, m.sit);
-      const bowRest = toW(m3, new THREE.Matrix4());
-      const bowM = blend(new THREE.Matrix4(), bowRest, bowPlay, m.raise);
+      toW(m3, A.bowRest);
+      const bowM = blend(m2, A.bowRest, bowPlay, m.raise);
       write('bow', m.slot.bow, bowM);
 
-      // —— 双手 ——
-      // 左手：掌心贴着琴颈侧面，手指朝琴面方向伸出、再弯过指板按弦（虎口托着琴颈）
+      // —— 左手 ——
+      // 掌心贴着琴颈侧面，手指朝面板方向伸出、再弯过指板按弦；换把时沿琴颈滑动，长音时前后揉弦
+      const neckZ = lerp(NECK_Z[0], NECK_Z[1], L.pos) + L.vib * (small ? VIBRATO.violin : VIBRATO.cello) * m.raise;
+      const neckW = inst(0, 0.03, neckZ, v);
       const neckSide = small ? 0.028 : 0.045;
-      const leftCenter = neckW.clone().addScaledVector(sideX, -neckSide * scaleK).addScaledVector(instUp, -0.035 * scaleK);
-      gripArm(rig, 'Left', leftCenter, instUp, sideX,
-        toWorld(rig, 0.4, lerp(0.8, 0.9, m.raise), lerp(-0.1, 0.1, m.raise)).clone(), GRIP.neck);
-      // 右手：掌心朝下压在弓根上方，手指朝外侧搭过弓杆
-      const bx = col(bowM, 0, new THREE.Vector3());
-      const by = col(bowM, 1, new THREE.Vector3());
-      const bz = col(bowM, 2, new THREE.Vector3());
-      const frog = new THREE.Vector3().setFromMatrixPosition(bowM);
-      const rightCenter = frog.addScaledVector(by, 0.032).addScaledVector(bx, 0.018).addScaledVector(bz, 0.03);
-      const fingers = bx.clone().multiplyScalar(-0.75).addScaledVector(by, -0.5);
-      gripArm(rig, 'Right', rightCenter, fingers, by.negate(),
-        toWorld(rig, -0.65, 0.95, lerp(-0.3, -0.05, m.raise)).clone(), GRIP.bow);
+      const leftCenter = neckW.addScaledVector(ax, -neckSide * scaleK).addScaledVector(ay, -0.035 * scaleK).clone();
+      const leftPole = small
+        ? toWorld(rig, 0.18, lerp(1.15, 0.72, m.sit), lerp(0, 0.35, m.raise), v2) // 左肘在琴下方、胸前
+        : toWorld(rig, 0.7, lerp(1.4, 1.02, m.sit), 0.05, v2); // 大提琴：左肘向外抬起
+      gripArm(rig, 'Left', leftCenter, ay, ax, leftPole.clone(), { ...GRIP.neck, fingers: L.fingers });
+
+      // —— 右手 ——
+      // 掌心朝下搭在弓根上方，手指绕过弓杆。靠近弓根时手腕高、手指更竖，拉到弓尖时手腕放平；
+      // 换弓的瞬间手腕比弓慢半拍，手指先被带着倒向另一边（velLag）
+      const bx = col(bowM, 0, A.bx);
+      const by = col(bowM, 1, A.by);
+      const bz = col(bowM, 2, A.bz);
+      const frog = v4.setFromMatrixPosition(bowM);
+      const rightCenter = frog.addScaledVector(by, 0.032).addScaledVector(bx, 0.018).addScaledVector(bz, 0.03).clone();
+      const beta = lerp(0.95, 0.45, b.u);
+      const fingers = A.f.copy(bx).multiplyScalar(-Math.cos(beta)).addScaledVector(by, -Math.sin(beta));
+      const palm = A.p.copy(bx).multiplyScalar(Math.sin(beta)).addScaledVector(by, -Math.cos(beta));
+      const lag = A.q.setFromAxisAngle(by, 0.32 * THREE.MathUtils.clamp((m.velLag ?? 0) / 1.2, -1, 1) * m.raise);
+      fingers.applyQuaternion(lag);
+      palm.applyQuaternion(lag);
+      const rightPole = small
+        ? toWorld(rig, -0.72, lerp(1.25, 0.84, m.sit), -0.22, v2) // 右肘在身体右后方、略低于手
+        : toWorld(rig, -0.78, lerp(1.2, 0.8, m.sit), -0.02, v2); // 大提琴：右肘在身体右侧、和手差不多高
+      gripArm(rig, 'Right', rightCenter, fingers, palm, rightPole.clone(), GRIP.bow);
       return;
     }
 
     if (m.section === 'choir') {
-      blend(M, POSES.folderDown, POSES.folderUp, m.raise);
-      toW(M, m2);
+      // 谱夹在胸腔坐标里（随呼吸、前倾一起动），放下时拿在身侧
+      M.multiplyMatrices(this.#holdFrame(rig, 0.6), POSES.folderUp);
+      toW(POSES.folderDown, m3);
+      blend(m2, m3, M, m.raise);
       write('folder', m.slot.folder, m2);
       // 双手捏住谱夹两侧：掌心朝谱夹中间，拇指在正面，手指绕到背面。
       // 谱夹局部 +x 指向演唱者的右边，所以左手抓 −x 一侧、右手抓 +x 一侧
@@ -839,66 +969,83 @@ export class Orchestra {
     }
 
     if (m.section === 'timpani') {
-      const tp = m;
+      const part = this.timpaniPart;
+      const up = v4.set(0, 1, 0);
+      const rootPos = v.setFromMatrixPosition(root).clone();
       for (const hand of [0, 1]) {
         const sx = hand ? 1 : -1;
-        const lift = tp.lift[hand];
-        const handPos = toWorld(rig, sx * 0.2, lerp(0.85, 1.02 + lift * 0.28, m.raise), lerp(0.1, 0.34, m.raise)).clone();
-        const drum = this.drumHeads[hand ? 2 : 1].world;
-        const dir = v.subVectors(drum, handPos).normalize();
-        dir.lerp(v2.set(0, 1, 0), lift * 0.85).normalize();
-        if (m.raise < 0.5) dir.set(0, -1, 0.3).normalize();
-        const z = dir;
-        const x = v3.set(0, 1, 0).cross(z).normalize();
-        const y = v4.crossVectors(z, x);
-        M.makeBasis(x, y, z).setPosition(handPos);
+        const state = part.hands[hand];
+        const drum = this.drumHeads[state.drum];
+        // 击打点：离鼓手最近的鼓圈往里约 9 厘米
+        const toDrum = A.d.subVectors(drum.world, rootPos).setY(0).normalize();
+        const head = A.n.copy(drum.world).addScaledVector(toDrum, -(drum.r - 0.09)).addScaledVector(up, 0.028 + state.h);
+        // 槌杆的俯仰跟着槌头高度走：贴近鼓面时槌头朝下，抬高时手腕翘起、槌头朝上（手腕和前臂一起发力）
+        const pitch = lerp(-0.26, 0.6, smoothstep(0.05, 0.42, state.h));
+        const dir = A.f.copy(toDrum).multiplyScalar(Math.cos(pitch)).addScaledVector(up, Math.sin(pitch));
+        // 放下时：槌垂在身体两侧
+        const restGrip = toWorld(rig, sx * 0.2, 0.85, 0.1, v2);
+        const restDir = local(0, -1, 0.3, A.p).normalize();
+        const origin = v3.copy(head).addScaledVector(dir, -0.37).lerp(restGrip.addScaledVector(restDir, -0.07), 1 - m.raise);
+        const z = A.bz.copy(dir).lerp(restDir, 1 - m.raise).normalize();
+        const x = A.bx.crossVectors(up, z).normalize();
+        const y = A.by.crossVectors(z, x);
+        M.makeBasis(x, y, z).setPosition(origin);
         write('mallet', hand, M);
         // 槌杆斜穿过掌心、从虎口伸出去：掌心朝下，手指横着握住槌杆
         const palm = y.clone().negate();
         const fingers = hand ? z.clone().cross(palm) : palm.clone().cross(z);
-        const center = handPos.clone().addScaledVector(z, 0.07).addScaledVector(y, 0.022);
+        const center = origin.clone().addScaledVector(z, 0.07).addScaledVector(y, 0.022);
         gripArm(rig, hand ? 'Left' : 'Right', center, fingers, palm, toWorld(rig, sx * 0.6, 0.9, -0.2).clone(), GRIP.mallet);
       }
       return;
     }
 
     if (m.section === 'organ') {
-      // 双手在三层键盘上移动：强度越大动作越大
-      const k = perf.playing ? perf.intensity : 0;
-      for (const [side, sx] of [['Left', 1], ['Right', -1]]) {
-        const tier = Math.floor((Math.sin(t * 0.7 + sx) * 0.5 + 0.5) * 2.99) * m.raise;
-        const reach = sx * (0.18 + Math.sin(t * (1.2 + k * 2) + sx * 1.7) * 0.07 * (0.3 + k));
-        const target = toWorld(rig, lerp(sx * 0.15, reach, m.raise), lerp(0.6, 0.8 + tier * 0.1 + 0.03, m.raise), lerp(0.3, 0.47 + tier * 0.08, m.raise)).clone();
-        poseArm(rig, side, target, toWorld(rig, sx * 0.5, 0.7, -0.2).clone());
+      // 双手在某一层键盘上按和弦：手掌悬在键上，手指弯成弧形；换和弦时手横移、手腕一沉
+      const part = this.organPart;
+      const fwd = local(0, -0.3, 1, A.f).normalize();
+      const down = local(0, -1, 0.15, A.p).normalize();
+      for (const h of part.hands) {
+        const sx = h.side === 'Left' ? 1 : -1;
+        const tier = h.tier * m.raise;
+        const target = toWorld(rig,
+          lerp(sx * 0.15, h.x, m.raise),
+          lerp(0.62, 0.825 + tier * 0.1 - h.press * 0.012, m.raise),
+          lerp(0.3, 0.44 + tier * 0.088, m.raise), v).clone();
+        gripArm(rig, h.side, target, fwd, down, toWorld(rig, sx * 0.5, 0.7, -0.2).clone(), { ...GRIP.keys, fingers: h.fingers });
       }
     }
   }
 
-  #updateDrums(dt) {
-    const tp = this.timpanist;
-    tp.lift = [0, 0];
-    tp.hits = tp.hits.filter((h) => {
-      const now = this.time;
-      if (now < h.at) {
-        // 抬槌：从出发到击打前逐渐举高，最后一刻落下
-        const k = clamp01((now - h.start) / Math.max(0.01, h.at - h.start));
-        tp.lift[h.hand] = Math.max(tp.lift[h.hand], smoothstep(0, 0.6, k) * (1 - smoothstep(0.75, 1, k)) * h.strength);
-        return true;
-      }
-      if (!h.landed) {
-        h.landed = true;
-        const d = this.drumHeads[h.drum];
-        d.flash = h.strength;
-        d.wobble = h.strength;
-        this.onDrumImpact?.(h.strength);
-      }
-      return now < h.at + 0.3;
-    });
+  /**
+   * 手持乐器（小提琴、谱夹）用的坐标系：原点跟着胸口（脖子根部）走，朝向只跟上身转动的一部分（follow），
+   * 其余保持角色本身的朝向。上身前倾、随乐句晃动时琴头不会跟着一起栽下去。
+   */
+  #holdFrame(rig, follow) {
+    const f = chestFrame(rig, this.tmp.chest);
+    const h = (this.tmpHold ??= { p: new THREE.Vector3(), q: new THREE.Quaternion(), s: new THREE.Vector3() });
+    f.decompose(h.p, h.q, h.s);
+    h.q.slerp(rig.root.quaternion, 1 - follow);
+    return f.compose(h.p, h.q, h.s);
+  }
+
+  #updateDrums(dt, perf) {
+    this.timpaniPart.update(dt, perf, this.beat, this.prevBeat);
     for (const d of this.drumHeads) {
       d.flash = damp(d.flash, 0, 6, dt);
       d.wobble = damp(d.wobble, 0, 5, dt);
       d.mesh.material.emissiveIntensity = d.flash * 0.5;
       d.mesh.position.y = 0.005 + Math.sin(this.time * 90) * d.wobble * 0.006;
+    }
+  }
+
+  /** 槌头触鼓：鼓皮震动；只有 cue 表的重击才闪光、震镜头 */
+  #drumContact(drum, strength, heavy) {
+    const d = this.drumHeads[drum];
+    d.wobble = Math.max(d.wobble, heavy ? strength : strength * 0.35);
+    if (heavy) {
+      d.flash = Math.max(d.flash, strength);
+      this.onDrumImpact?.(strength);
     }
   }
 

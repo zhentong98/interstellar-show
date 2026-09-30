@@ -32,23 +32,9 @@
       "file": "scan-man-3.glb",
       "gender": "man",
       "roles": [
-        "strings",
-        "choir",
-        "timpani",
-        "organ",
-        "winds",
-        "brass",
-        "piano"
-      ],
-      "height": 1.83
-    },
-    {
-      "file": "conductor.glb",
-      "gender": "man",
-      "roles": [
         "conductor"
       ],
-      "height": 1.82
+      "height": 1.83
     },
     {
       "file": "scan-woman-1.glb",

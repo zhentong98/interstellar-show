@@ -21,7 +21,7 @@ export const PIANO = {
 
 const M = {
   // 钢琴漆：清漆层给出黑亮的倒影；清漆粗糙度留一点，顶光在琴身上是一片柔和的高光，而不是被 Bloom 晕开的亮点
-  lacquer: new THREE.MeshPhysicalMaterial({ color: 0x070707, roughness: 0.22, clearcoat: 1, clearcoatRoughness: 0.14 }),
+  lacquer: new THREE.MeshPhysicalMaterial({ color: 0x070707, roughness: 0.25, clearcoat: 0.7, clearcoatRoughness: 0.2 }),
   ivory: new THREE.MeshStandardMaterial({ color: whiteMaterial(0xf0ebdd), roughness: 0.38 }),
   ebony: new THREE.MeshStandardMaterial({ color: 0x0a0909, roughness: 0.4 }),
   plate: new THREE.MeshStandardMaterial({ color: 0xa8843c, metalness: 0.85, roughness: 0.42 }),
