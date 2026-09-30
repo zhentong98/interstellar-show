@@ -7,13 +7,13 @@
 |---|---|---|---|---|
 | Eric Rigged 001（`scan-man-1.glb`） | Renderpeople | CC BY 4.0 | 写实乐团人物；经 Mixamo 自动绑骨；贴图最大 2K、WebP 与 Draco 压缩 | [Sketchfab](https://sketchfab.com/3d-models/eric-rigged-001-rigged-3d-business-man-a46bc9f67aaa415bb4f3241eef900e7f) |
 | Indian Man in suit（`scan-man-2.glb`） | Nodeaxis Interactive | CC BY 4.0 | 写实乐团人物；经 Mixamo 自动绑骨；贴图最大 2K、WebP 与 Draco 压缩 | [Sketchfab](https://sketchfab.com/3d-models/indian-man-in-suit-985dd9756d89464b9380414b5b12d8aa) |
-| Businessman (Rigged)（`scan-man-3.glb`） | Jungle Jim | CC BY 4.0 | 写实乐团人物；保留原有 65 骨骼绑定，统一为 Mixamo 命名并补齐牙齿的头部绑定；贴图最大 2K、WebP 与 Draco 压缩 | [Sketchfab](https://sketchfab.com/3d-models/businessman-rigged-8933d61fcb1e46f3aead661227bb4fed) |
+| Businessman (Rigged)（`scan-man-3.glb`） | Jungle Jim | CC BY 4.0 | 指挥（五指齐全，握指挥棒）；保留原有 65 骨骼绑定，统一为 Mixamo 命名并补齐牙齿的头部绑定；贴图最大 2K、WebP 与 Draco 压缩 | [Sketchfab](https://sketchfab.com/3d-models/businessman-rigged-8933d61fcb1e46f3aead661227bb4fed) |
 | Carla Rigged 001（`scan-woman-1.glb`） | Renderpeople | CC BY 4.0 | 写实乐团人物；经 Mixamo 自动绑骨；贴图最大 2K、WebP 与 Draco 压缩 | [Sketchfab](https://sketchfab.com/3d-models/carla-rigged-001-rigged-3d-business-women-acf520f450d14dd799f98a6fede3edf5) |
 | Claudia Rigged 002（`scan-woman-2.glb`） | Renderpeople | CC BY 4.0 | 写实乐团人物；经 Mixamo 自动绑骨；贴图最大 2K、WebP 与 Draco 压缩 | [Sketchfab](https://sketchfab.com/3d-models/claudia-rigged-002-3d-rigged-business-women-c659bd0accab47c6bbe390cf822a2b92) |
 | Sophia Animated 003（`scan-woman-3.glb`） | Renderpeople | CC BY 4.0 | 写实乐团人物；经 Mixamo 自动绑骨，移除原附带动画；贴图最大 2K、WebP 与 Draco 压缩 | [Sketchfab](https://sketchfab.com/3d-models/sophia-animated-003-animated-3d-woman-dc448c3be0e74f96a55fb475a13433cf) |
 | Music Hall 01（2K HDRI，`public/hdri/concert_hall.hdr`） | Sergej Majboroda / Poly Haven | CC0 1.0 | 音乐厅环境反射与照明 | [Poly Haven](https://polyhaven.com/a/music_hall_01) |
 | three.js | three.js authors | MIT | 3D 渲染（含 CSS3DRenderer、后处理 Bloom、HDRLoader） | [github.com/mrdoob/three.js](https://github.com/mrdoob/three.js) |
-| 原有乐手与指挥模型（`man-*.glb`、`woman-*.glb`、`conductor.glb`） | MakeHuman 社区（基础网格、体型目标、Mixamo 骨骼，经 MPFB2 生成）；演出服、头发和材质由 `scripts/make_cast.py` 制作 | CC0 1.0 | 乐团写实人物 | [MPFB2](https://github.com/makehumancommunity/mpfb2) |
+| 原有乐手与指挥模型（`man-*.glb`、`woman-*.glb`、`conductor.glb`） | MakeHuman 社区（基础网格、体型目标、Mixamo 骨骼，经 MPFB2 生成）；演出服、头发和材质由 `scripts/make_cast.py` 制作 | CC0 1.0 | 乐团写实人物（已不在演员表中，保留作备用） | [MPFB2](https://github.com/makehumancommunity/mpfb2) |
 | Draco 解码器 | Google | Apache 2.0 | 解压经 Draco 压缩的人物模型（`public/draco/`，随 three.js 分发） | [github.com/google/draco](https://github.com/google/draco) |
 | Cormorant Garamond | Christian Thalmann | SIL OFL 1.1 | 节目单与字幕牌的西文衬线字体 | [Google Fonts](https://fonts.google.com/specimen/Cormorant+Garamond) |
 | Noto Serif SC | Google、Adobe | SIL OFL 1.1 | 中文衬线字体 | [Google Fonts](https://fonts.google.com/noto/specimen/Noto+Serif+SC) |
