@@ -798,19 +798,21 @@ export class Orchestra {
       blend(M, POSES.folderDown, POSES.folderUp, m.raise);
       toW(M, m2);
       write('folder', m.slot.folder, m2);
-      // 双手捏住谱夹两侧：掌心朝谱夹中间，拇指在正面，手指绕到背面
+      // 双手捏住谱夹两侧：掌心朝谱夹中间，拇指在正面，手指绕到背面。
+      // 谱夹局部 +x 指向演唱者的右边，所以左手抓 −x 一侧、右手抓 +x 一侧
       const fx = col(m2, 0, v2);
       const behind = col(m2, 2, v3).negate();
-      const hold = (side, sx, pole) => {
-        const center = v.set(sx * 0.155, -0.02, 0.03).applyMatrix4(m2).clone();
-        gripArm(rig, side, center, behind, fx.clone().multiplyScalar(-sx), pole, GRIP.folder);
+      const hold = (side, edge, pole) => {
+        const center = v.set(edge, -0.02, 0.03).applyMatrix4(m2).clone();
+        gripArm(rig, side, center, behind, fx.clone().multiplyScalar(-Math.sign(edge)), pole, GRIP.folder);
       };
       if (m.raise > 0.3) {
-        hold('Left', 1, toWorld(rig, 0.45, 0.9, -0.2).clone());
-        hold('Right', -1, toWorld(rig, -0.45, 0.9, -0.2).clone());
+        hold('Left', -0.155, toWorld(rig, 0.45, 0.9, -0.2).clone());
+        hold('Right', 0.155, toWorld(rig, -0.45, 0.9, -0.2).clone());
       } else {
+        // 放下时左手在身侧拿着谱夹，捏靠近大腿的那一边
         restArms(rig, 0);
-        hold('Left', 1, toWorld(rig, 0.5, 1.0, -0.3).clone());
+        hold('Left', 0.155, toWorld(rig, 0.5, 1.0, -0.3).clone());
       }
       return;
     }
