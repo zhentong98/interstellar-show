@@ -73,6 +73,7 @@ export class World {
     this.audience = new Audience(this.house);
     this.scene.add(this.audience.group);
     this.rig = new CameraRig(this.camera);
+    this.rig.attachInput(root);
     this.orchestra.onDrumImpact = (strength) => {
       this.rig.addShake(0.12 * strength);
       this.post.kick(0.15 * strength);

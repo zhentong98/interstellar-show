@@ -488,6 +488,40 @@ body {
   background: rgba(255, 232, 196, 0.1);
 }
 
+.controls-views {
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 22px;
+}
+
+.controls-views button {
+  padding: 5px 12px;
+}
+
+.controls-bar button[aria-pressed='true'] {
+  color: #1a130c;
+  background: #e9dcc2;
+  border-color: #e9dcc2;
+}
+
+.controls-bar button:focus-visible {
+  outline: 2px solid #e9dcc2;
+  outline-offset: 2px;
+}
+
+.controls-hint {
+  font-family: var(--serif-cjk);
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  color: #e9e1d2;
+  background: rgba(14, 11, 8, 0.72);
+  border-radius: 999px;
+  padding: 7px 18px;
+  text-align: center;
+}
+
 .show-prompt {
   font-family: var(--serif-cjk);
   font-size: 15px;

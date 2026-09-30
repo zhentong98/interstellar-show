@@ -82,7 +82,7 @@ function enter(setlist) {
     controls.detach();
     renderBackPage(document.getElementById('backpage'), setlist, director.results ?? setlist.map(() => ({})));
   });
-  controls.attach(director);
+  controls.attach(director, world.rig);
   world.start();
   programme.leave(ceremony.entrance.programmeExit);
 }

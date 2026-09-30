@@ -33,7 +33,7 @@ const mat = {
   paper: new THREE.MeshStandardMaterial({ color: 0xe8e2d4, roughness: 0.9, side: THREE.DoubleSide }),
   copper: new THREE.MeshPhysicalMaterial({ color: 0xc77b45, metalness: 1, roughness: 0.24, clearcoat: 0.6, clearcoatRoughness: 0.2 }),
   chrome: new THREE.MeshStandardMaterial({ color: 0xdadada, metalness: 1, roughness: 0.15 }),
-  drumHead: new THREE.MeshStandardMaterial({ color: 0x9a917e, roughness: 0.75, emissive: 0xffe0b0, emissiveIntensity: 0 }),
+  drumHead: new THREE.MeshStandardMaterial({ color: 0x7d7566, roughness: 0.75, emissive: 0xffe0b0, emissiveIntensity: 0 }),
   riser: new THREE.MeshStandardMaterial({ color: 0x1d1611, roughness: 0.6 }),
   console: new THREE.MeshPhysicalMaterial({ color: 0x3e2413, roughness: 0.35, clearcoat: 0.8, clearcoatRoughness: 0.25 }),
   keys: new THREE.MeshStandardMaterial({ map: organKeys(), roughness: 0.35 }),
