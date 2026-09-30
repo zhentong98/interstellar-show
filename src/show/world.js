@@ -21,7 +21,7 @@ import { Conductor } from '../stage/conductor.js';
 import { Audience } from '../stage/audience.js';
 import { CameraRig } from '../stage/cameraRig.js';
 
-export const IDLE_PERFORMANCE = Object.freeze({ playing: false, intensity: 0, bpm: 72, cueName: '', events: [] });
+export const IDLE_PERFORMANCE = Object.freeze({ playing: false, intensity: 0, bpm: 72, cueName: '', events: [], nextHit: Infinity, nextFlash: Infinity });
 
 export class World {
   constructor(root) {

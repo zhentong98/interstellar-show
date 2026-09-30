@@ -54,10 +54,12 @@ export const SHOTS = {
   wide: { label: '舞台全景', key: '2', pos: v(0, 6.4, 7.2), target: v(0, 2.8, -6.5), fov: 50 },
   conductor: { label: '指挥', key: '3', pos: v(1.2, 2.6, -5.0), target: v(0, 2.55, -1.6), fov: 30 },
   violins: { label: '小提琴', key: '4', pos: v(-0.9, 2.3, 0.4), target: v(-2.5, 1.75, -2.6), fov: 38 },
-  cellos: { label: '大提琴', key: '5', pos: v(-1.3, 3.3, -2.8), target: v(-4.4, 1.9, -5.0), fov: 38 },
+  // 大提琴坐在最外一道弧，正面平视会被谱架挡住琴身：从前侧方高处斜着俯拍整排
+  cellos: { label: '大提琴', key: '5', pos: v(-1.6, 4.3, -3.7), target: v(-4.4, 1.4, -4.9), fov: 38 },
   timpani: { label: '定音鼓', key: '6', pos: v(2.9, 3.1, -1.5), target: v(4.8, 2.1, -4.2), fov: 38 },
   organ: { label: '管风琴', key: '7', pos: v(2.7, 2.5, -7.0), target: v(0.3, 1.8, -8.6), fov: 36 },
-  choir: { label: '合唱团', key: '8', pos: v(3.4, 3.0, -2.9), target: v(6.6, 2.5, -9.0), fov: 40 },
+  // 放在定音鼓的左后方，定音鼓手不会挡在前景里
+  choir: { label: '合唱团', key: '8', pos: v(2.0, 3.3, -4.8), target: v(6.8, 2.6, -9.2), fov: 40 },
 };
 
 /** 观众能选的全部镜头（按控制条上的顺序） */
@@ -74,20 +76,29 @@ const FREE_BOUNDS = new THREE.Box3(
   v(HALL.halfWidth - 0.8, HALL.height - 1.5, HALL.back - 1),
 );
 /**
- * 自动导播：各机位被选中的权重（安静段落 / 激烈段落之间插值）和停留时长（秒）。
- * 座位视角能看到电影画面，停得最久、选得最多；特写短一些。
+ * 自动导播。成对的数值是 [安静段落, 激烈段落]，按当前强度插值；时长单位是秒。
+ * 座位视角能看到电影，是导播的"主镜头"：每个特写之后多半切回座位，座位停得最久。
+ * 按下面的数值，座位视角约占演奏时间的六成多（五首曲目按 cue 表离线模拟为 60%～66%）。
  */
 const AUTO = {
+  // 特写机位被选中的权重
   weights: {
-    seat: [4, 3], wide: [1.5, 2.5], conductor: [2, 2], violins: [2, 1.5],
-    cellos: [1.5, 1.5], timpani: [0.3, 1.5], organ: [1, 1], choir: [1, 1.5],
+    wide: [1.5, 2.5], conductor: [2, 2], violins: [2, 1.5], cellos: [1.5, 1.5],
+    timpani: [0.3, 1.5], organ: [1, 1], choir: [1, 1.5],
   },
-  seatHold: [13, 8],
-  shotHold: [7, 4],
-  drumLead: 1.8, // 定音鼓：击打前多久切过去，击打后再停一会儿
+  seatHold: [16, 11],
+  shotHold: [5.5, 4.5],
+  backToSeat: [0.8, 0.65], // 特写结束后切回座位的概率；否则再接一个特写
+  opening: 10, // 每一首开头先在座位看这么久电影
+  drumLead: 1.6, // 定音鼓：重击前多久切过去（看鼓手抬槌、落下）
+  drumAfter: 1.8, // 重击后再停一会儿
   flashHold: 4.5,
+  minShot: 2.5, // 任何镜头至少停这么久：闪光不打断更短的镜头，重击前这么久之内也不再换镜头
+  idleBack: 1.2, // 停止演奏超过这么久才切回座位（片段结束、长时间缓冲）；短暂缓冲不切
   pushIn: 0.06, // 每个镜头停留期间慢慢推近的比例
 };
+const lerpPair = ([calm, loud], k) => calm + (loud - calm) * k;
+const autoState = (left = 4) => ({ shot: 'seat', left, elapsed: 0, hold: left, recent: [], idle: 0, locked: false });
 
 const MOVE_KEYS = {
   KeyW: [0, 1], ArrowUp: [0, 1], KeyS: [0, -1], ArrowDown: [0, -1],
@@ -107,7 +118,7 @@ export class CameraRig {
     this.shakeOffset = new THREE.Vector3();
     this.rand = seededRandom(3);
     this.view = 'seat'; // 观众选的镜头
-    this.auto = { shot: 'seat', left: 4, elapsed: 0, hold: 4, recent: [] };
+    this.auto = autoState();
     this.blend = null; // 切换镜头时的过渡
     this.keys = new Set();
     this.fitToAspect(camera.aspect);
@@ -148,7 +159,7 @@ export class CameraRig {
       return;
     }
     this.blend = { k: 0, pos: cam.position.clone(), target: (this.lookAt ?? this.target).clone(), fov: cam.fov };
-    this.auto = { shot: 'seat', left: 4, elapsed: 0, hold: 4, recent: [] };
+    this.auto = autoState();
     if (id === 'seat' || id === 'auto') this.snapToSeat(true);
     else this.mode = 'shot';
   }
@@ -158,44 +169,70 @@ export class CameraRig {
     return this.view === 'auto' ? this.auto.shot : this.view;
   }
 
-  /** 自动导播：演奏时按强度和一次性事件切镜头；不演奏时回到座位，让预设运镜接管 */
+  /**
+   * 自动导播：演奏时按强度和一次性事件切镜头；不演奏时回到座位，让预设运镜接管。
+   * 规则按优先级：
+   *   1. 定音鼓重击前 drumLead 秒切到定音鼓，锁住到击打后 drumAfter 秒（闪光也不打断）
+   *   2. 闪光切全景（已在全景就回座位）；刚切过来不到 minShot 秒的镜头不打断
+   *   3. 停留时间到：座位之后接一个特写；特写之后按 backToSeat 的概率回座位，否则再接一个特写。
+   *      重击切镜或闪光前 minShot 秒之内不换新镜头，当前镜头多停一会儿
+   */
   #direct(dt, perf) {
     const a = this.auto;
     if (!perf?.playing) {
-      if (a.shot !== 'seat') this.#cut('seat', 4);
-      a.left = Math.max(a.left, 4); // 开演后先在座位看几秒电影
+      a.idle += dt;
+      if (a.idle > AUTO.idleBack) {
+        if (a.shot !== 'seat') this.#cut('seat', 0);
+        // 下一次开演先在座位看一会儿电影；停留时长清零，开头的闪光（例如爆炸）也留在座位上看
+        a.left = a.hold = AUTO.opening;
+        a.elapsed = 0;
+      }
       return;
     }
-    const k = Math.min(1, Math.max(0, perf.intensity ?? 0));
-    for (const ev of perf.events ?? []) {
-      if (ev.type === 'drumHit' && a.shot !== 'timpani') return this.#cut('timpani', (ev.lead ?? 0) + AUTO.drumLead);
-      if (ev.type === 'flash') return this.#cut(a.shot === 'wide' ? 'seat' : 'wide', AUTO.flashHold);
-    }
+    a.idle = 0;
     a.elapsed += dt;
     a.left -= dt;
-    if (a.left > 0) return;
-    // 按权重挑下一个机位，不重复最近用过的两个
-    const pool = Object.entries(AUTO.weights).filter(([id]) => id !== a.shot && !a.recent.includes(id));
-    let r = this.rand() * pool.reduce((sum, [, w]) => sum + w[0] + (w[1] - w[0]) * k, 0);
-    let next = pool[0][0];
-    for (const [id, w] of pool) {
-      r -= w[0] + (w[1] - w[0]) * k;
-      if (r <= 0) {
-        next = id;
-        break;
-      }
+    const k = Math.min(1, Math.max(0, perf.intensity ?? 0));
+    const nextHit = perf.nextHit ?? Infinity;
+
+    if (nextHit <= AUTO.drumLead) {
+      if (a.shot === 'timpani') a.left = Math.max(a.left, nextHit + AUTO.drumAfter);
+      else this.#cut('timpani', nextHit + AUTO.drumAfter);
+      a.locked = true;
+      return;
     }
-    const [calm, loud] = next === 'seat' ? AUTO.seatHold : AUTO.shotHold;
-    this.#cut(next, (calm + (loud - calm) * k) * (0.85 + this.rand() * 0.3));
+    if (a.locked && a.left > 0) return;
+    a.locked = false;
+    if (perf.events?.some((ev) => ev.type === 'flash') && a.elapsed >= AUTO.minShot) {
+      return this.#cut(a.shot === 'wide' ? 'seat' : 'wide', AUTO.flashHold);
+    }
+    // 重击或闪光快到了：当前镜头多停一会儿，免得新镜头没停够就被切走，或者因为太新而错过闪光
+    if (a.left > 0 || nextHit - AUTO.drumLead < AUTO.minShot || (perf.nextFlash ?? Infinity) < AUTO.minShot) return;
+
+    const next = a.shot === 'seat' || this.rand() > lerpPair(AUTO.backToSeat, k) ? this.#pickShot(k) : 'seat';
+    this.#cut(next, lerpPair(next === 'seat' ? AUTO.seatHold : AUTO.shotHold, k) * (0.85 + this.rand() * 0.3));
+  }
+
+  /** 按权重挑一个特写机位，不重复当前和最近用过的两个 */
+  #pickShot(k) {
+    const a = this.auto;
+    const pool = Object.entries(AUTO.weights).filter(([id]) => id !== a.shot && !a.recent.includes(id));
+    let r = this.rand() * pool.reduce((sum, [, w]) => sum + lerpPair(w, k), 0);
+    for (const [id, w] of pool) {
+      r -= lerpPair(w, k);
+      if (r <= 0) return id;
+    }
+    return pool[pool.length - 1][0];
   }
 
   /** 导播硬切到某个机位 */
   #cut(id, hold) {
     const a = this.auto;
-    a.recent = [a.shot, ...a.recent].slice(0, 2);
+    if (a.shot !== 'seat') a.recent = [a.shot, ...a.recent].slice(0, 2);
     a.shot = id;
     a.left = a.hold = hold;
     a.elapsed = 0;
+    a.locked = false;
     this.blend = null;
     if (id === 'seat') this.snapToSeat(true);
     else this.mode = 'shot';

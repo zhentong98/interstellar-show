@@ -65,13 +65,21 @@ export class CueRunner {
       }
       this.lastT = t;
     }
-
     return {
       playing: advancing,
       intensity: this.intensity,
       bpm: this.cue?.bpm ?? DEFAULT_BPM,
       cueName: this.cue?.name ?? '',
       events,
+      // 自动导播的预读：提前切到定音鼓，闪光前不换新镜头
+      nextHit: this.#timeTo('drumHit', t),
+      nextFlash: this.#timeTo('flash', t),
     };
+  }
+
+  /** 距离下一个某类事件还有多少秒；没有了就是 Infinity */
+  #timeTo(type, t) {
+    const ev = this.events.find((e) => e.type === type && e.at > t);
+    return ev ? ev.at - t : Infinity;
   }
 }
