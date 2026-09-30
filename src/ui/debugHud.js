@@ -1,4 +1,8 @@
-// ?debug 调试面板：显示当前环节、播放时间、cue 和强度，方便对照视频校准 src/cues/<slug>.js
+// ?debug 调试面板：显示当前环节、播放时间、cue、强度和镜头，方便对照视频校准 src/cues/<slug>.js
+
+import { VIEWS } from '../stage/cameraRig.js';
+
+const viewLabel = (id) => VIEWS.find((v) => v.id === id)?.label ?? id;
 
 export class DebugHud {
   constructor(director, world) {
@@ -30,7 +34,15 @@ export class DebugHud {
       clock ? `播放器 ${clock.state}${clock.abnormal ? ' · 异常' : ''}${clock.blocked ? ' · 被拦截' : ''}` : null,
       clock ? `cue    ${perf.cueName || '—'}` : null,
       `强度   ${perf.intensity.toFixed(2)}${perf.playing ? '' : '（等待）'}`,
+      `镜头   ${this.#cameraText()}`,
       `帧率   ${this.fps}`,
     ].filter(Boolean).join('\n');
+  }
+
+  #cameraText() {
+    const rig = this.world.rig;
+    if (rig.view !== 'auto') return viewLabel(rig.view);
+    const left = this.world.perf.playing ? `（还剩 ${Math.max(0, rig.auto.left).toFixed(1)} 秒）` : '';
+    return `自动导播 · ${viewLabel(rig.active)}${left}`;
   }
 }

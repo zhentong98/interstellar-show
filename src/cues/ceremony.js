@@ -1,14 +1,14 @@
-// 整场演出的仪式节奏（单位：秒）。
+// 整场演出的仪式节奏（单位：秒）。开演前的仪式约 30 秒（控制条的"跳过开场"可以直接开始第一首）。
 // 曲目内部的节奏在 src/cues/<slug>.js；曲目之外的所有时间点都集中在这里，方便整体调速。
 
 export const ceremony = {
   // 1. 入场：镜头从大厅后方滑到第 8 排，乐手陆续上台落座
   entrance: {
-    programmeExit: 1.2, // 节目单放下的动画
-    cameraGlide: 11, // 镜头滑到座位
-    walkOnSpread: 9, // 乐手陆续出场的时间跨度（第一个到最后一个开始走）
-    walkSpeed: 1.35, // 乐手步行速度（米/秒）
-    settle: 2.5, // 全员落座后翻开谱子
+    programmeExit: 1, // 节目单放下的动画
+    cameraGlide: 7.5, // 镜头滑到座位
+    walkOnSpread: 4.5, // 乐手陆续出场的时间跨度（第一个到最后一个开始走）
+    walkSpeed: 1.55, // 乐手步行速度（米/秒）
+    settle: 1.2, // 全员落座后翻开谱子
     murmur: 0.8, // 满场低声交谈的音量
     stageLevel: 0.45, // 开演前舞台是工作光
     beams: 0.35, // 开演前的体积光束：淡淡的烟雾感
@@ -16,33 +16,33 @@ export const ceremony = {
 
   // 2. 调音：首席小提琴起立，双簧管给出 A，全团调音
   tuning: {
-    standUp: 1.2,
-    oboeSolo: 1.8, // 双簧管单独给 A 的时长，之后全团加入
-    oboe: 5.5, // 双簧管 A 音总时长
-    tutti: 7, // 全团调音
-    sitDown: 1.6,
+    standUp: 0.9,
+    oboeSolo: 1.2, // 双簧管单独给 A 的时长，之后全团加入
+    oboe: 3.2, // 双簧管 A 音总时长
+    tutti: 3.6, // 全团调音
+    sitDown: 1.1,
   },
 
   // 观众席灯光逐排熄灭，交谈声渐弱
   houseDown: {
-    rowStagger: 0.16, // 相邻两排熄灯的间隔（从后往前）
-    rowFade: 1.4,
-    murmurFade: 4,
-    cardFade: 3, // 巨幕上的标题卡淡出
+    rowStagger: 0.08, // 相邻两排熄灯的间隔（从后往前）
+    rowFade: 1,
+    murmurFade: 2.5,
+    cardFade: 2, // 巨幕上的标题卡淡出
     stageLevel: 0.8,
     beams: 0.7, // 熄灯后光束更显眼
-    hold: 1.2,
+    hold: 0.6,
   },
 
   // 3. 指挥上台：鼓掌、与首席握手、鞠躬、转身
   conductor: {
     applause: 0.6, // 掌声强度 0~1
-    applauseDuration: 11,
-    walkOn: 5.2,
-    handshake: 1.8,
-    toPodium: 1.6,
-    turn: 0.9,
-    bow: 2.2,
+    applauseDuration: 7.5,
+    walkOn: 3.6,
+    handshake: 1.2,
+    toPodium: 1.2,
+    turn: 0.8,
+    bow: 1.7,
   },
 
   // 每一首：举棒、静止、开演、结束前切走
@@ -51,7 +51,7 @@ export const ceremony = {
     stageLevel: 1,
     beams: 1,
     preloadTimeout: 14, // 最多等下一段缓冲这么久
-    stillness: 2, // 指挥举棒后全场静止
+    stillness: 1.5, // 指挥举棒后全场静止
     revealFade: 0.8, // 画面真正开始走时幕布拉开
     cutBeforeEnd: 0.5, // 片段结束前 0.5 秒切走，不让 YouTube 的相关视频露出来
     cutFade: 0.35,

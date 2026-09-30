@@ -21,7 +21,7 @@ import { Conductor } from '../stage/conductor.js';
 import { Audience } from '../stage/audience.js';
 import { CameraRig } from '../stage/cameraRig.js';
 
-export const IDLE_PERFORMANCE = Object.freeze({ playing: false, intensity: 0, bpm: 72, cueName: '', events: [] });
+export const IDLE_PERFORMANCE = Object.freeze({ playing: false, intensity: 0, bpm: 72, cueName: '', events: [], nextHit: Infinity, nextFlash: Infinity });
 
 export class World {
   constructor(root) {
@@ -73,6 +73,7 @@ export class World {
     this.audience = new Audience(this.house);
     this.scene.add(this.audience.group);
     this.rig = new CameraRig(this.camera);
+    this.rig.attachInput(root);
     this.orchestra.onDrumImpact = (strength) => {
       this.rig.addShake(0.12 * strength);
       this.post.kick(0.15 * strength);
@@ -178,7 +179,7 @@ export class World {
     this.orchestra.update(dt, perf);
     this.conductor.update(dt, perf);
     this.audience.update(dt);
-    this.rig.update(dt);
+    this.rig.update(dt, perf);
     this.#updateScreenMask();
     // 音管自发光（底光打上去的效果）
     hallMaterials.pipeMetal.emissive.copy(this.stageLights.pipeColor);

@@ -77,12 +77,13 @@ function enter(setlist) {
   if (params.has('debug')) new DebugHud(director, world);
   window.__show = { director, world, player }; // 方便在控制台里调试
 
+  // 先接上控制条：run() 一开始就会同步更新状态文字，控制条要能读到 director.phase（开演前显示"跳过开场"）
+  controls.attach(director, world.rig);
   director.run(setlist).catch((err) => {
     console.error('演出出错：', err);
     controls.detach();
     renderBackPage(document.getElementById('backpage'), setlist, director.results ?? setlist.map(() => ({})));
   });
-  controls.attach(director);
   world.start();
   programme.leave(ceremony.entrance.programmeExit);
 }
