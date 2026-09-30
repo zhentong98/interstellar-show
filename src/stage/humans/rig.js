@@ -90,7 +90,7 @@ export class Rig {
   /** 回到静止姿态；keepUpper 时保留上身（脊柱、脖子、头）当前的旋转 */
   resetPose(keepUpper = false) {
     for (const bone of this.list) {
-      if (keepUpper && UPPER.has(bone.name)) continue;
+      if (keepUpper && UPPER.has(bone.name)) continue; // 程序化骨骼没有动作捕捉，按布尔值处理即可
       bone.quaternion.copy(bone.userData.restQuat);
       bone.position.copy(bone.userData.restPos);
     }
@@ -143,10 +143,12 @@ export function aimBone(bone, dir) {
   _rest.copy(tip).normalize().applyQuaternion(bone.userData.restQuat);
   _q.setFromUnitVectors(_rest, _want);
   bone.quaternion.copy(_q).multiply(bone.userData.restQuat);
-  bone.updateMatrixWorld(true);
+  // 不在这里刷新整棵子树的世界矩阵：之后读取位置、朝向都经过 getWorldXxx，
+  // 它们会沿父链自动刷新；整棵子树每次都刷新是 IK 最大的开销（一只手就有 20 多根指骨）。
 }
 
 const _wq = new THREE.Quaternion();
+const _wqi = new THREE.Quaternion();
 const _wd = new THREE.Quaternion();
 
 /** 让骨骼绕世界坐标里的轴转 angle（叠加在当前姿态上） */
@@ -155,9 +157,8 @@ export function rotateWorld(bone, axis, angle) {
   bone.parent.getWorldQuaternion(_wq);
   _wd.setFromAxisAngle(axis, angle);
   // 父骨骼坐标系里的增量：pq⁻¹ · 旋转 · pq
-  _wd.premultiply(_wq.clone().invert()).multiply(_wq);
+  _wd.premultiply(_wqi.copy(_wq).invert()).multiply(_wq);
   bone.quaternion.premultiply(_wd);
-  bone.updateMatrixWorld(true);
 }
 
 const _s = new THREE.Vector3();

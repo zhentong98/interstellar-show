@@ -18,6 +18,7 @@ const HAND_TIP = { LeftHand: 'LeftHandMiddle1', RightHand: 'RightHandMiddle1' };
 
 const _v = new THREE.Vector3();
 const _q = new THREE.Quaternion();
+const _m = new THREE.Matrix4();
 
 /**
  * 掌心法线（手骨局部坐标）：取主要受这只手（含手指）驱动的顶点做主成分分析，
@@ -105,6 +106,7 @@ export class ModelRig {
     for (const bone of this.list) {
       bone.userData.restQuat = bone.quaternion.clone();
       bone.userData.restPos = bone.position.clone();
+      bone.userData.upper = UPPER.has(normalize(bone.name));
     }
     for (const [name, child] of Object.entries({ ...TIP_CHILD, ...HAND_TIP })) {
       const bone = this.bones[name];
@@ -133,6 +135,16 @@ export class ModelRig {
       Right: handInfo(this, 'Right', character.palms.Right),
     };
 
+    // 视锥剔除：所有网格共用一个足够大的包围球（角色局部坐标里以胸口为中心、半径 1.3 米，
+    // 坐下、抬手、指挥举棒都在里面）。原来蒙皮网格一律不剔除，每个人在三盏投影灯的阴影里各画一遍，
+    // 前排人数一多绘制调用就翻倍；剔除之后每盏灯只画它照得到的人
+    const sphere = new THREE.Sphere(new THREE.Vector3(0, 0.9, 0.15), 1.3).applyMatrix4(this.root.matrixWorld);
+    for (const mesh of this.meshes) {
+      if (!mesh.isSkinnedMesh) continue; // 普通网格的剔除用的是共享几何体的包围球，不去改它
+      mesh.boundingSphere = sphere.clone().applyMatrix4(_m.copy(mesh.matrixWorld).invert());
+      mesh.frustumCulled = true;
+    }
+
     // 上身动作捕捉（只保留脊柱、脖子、头的旋转轨道）
     if (idleClip) {
       const tracks = idleClip.tracks.filter((t) => {
@@ -159,9 +171,17 @@ export class ModelRig {
     return true;
   }
 
+  /**
+   * 回到静止姿态。keepUpper：上身（脊柱、脖子、头）保留多少动作捕捉——true / 1 全保留，
+   * 0~1 之间和静止姿态按比例混合（演奏时收掉大部分待机动作的弯腰驼背，只留一点活气）。
+   */
   resetPose(keepUpper = false) {
+    const w = keepUpper === true ? 1 : +keepUpper || 0;
     for (const bone of this.list) {
-      if (keepUpper && UPPER.has(normalize(bone.name))) continue;
+      if (w > 0 && bone.userData.upper) {
+        if (w < 1) bone.quaternion.copy(_q.copy(bone.userData.restQuat).slerp(bone.quaternion, w));
+        continue;
+      }
       bone.quaternion.copy(bone.userData.restQuat);
       bone.position.copy(bone.userData.restPos);
     }
