@@ -96,8 +96,11 @@ export class Director {
 
   // ——— 1~3. 开演前 ———
 
+  // 座位视角和自动导播时，镜头像音乐会转播一样跟着仪式切换（rig.take）；观众选了别的机位时 take 只占用同样的时长。
+  // 每一步的时长都在 ceremony.js。
   async #preShow(signal) {
     const { world, audio, tl } = this;
+    const { rig, orchestra, conductor } = world;
     const E = C.entrance;
     world.house.setAll(1);
     world.stageLights.setLevel(E.stageLevel);
@@ -105,61 +108,79 @@ export class Director {
     world.stageLights.setMood('preshow');
     world.screen.snap({ curtain: 1, card: 1, gargantua: 0 });
     audio.setMurmur(E.murmur, 3);
+    const shoot = (name, duration, subject) => background(rig.take(name, duration, tl, signal, subject));
 
-    // 入场：镜头从大厅后方滑到第 8 排，同时乐手陆续上台落座
-    world.rig.placeAt('entrance');
-    await Promise.all([
-      world.rig.fly('entrance', E.cameraGlide, tl, signal),
-      world.orchestra.walkOn(tl, { spread: E.walkOnSpread, speed: E.walkSpeed }, signal),
-    ]);
-    world.orchestra.turnPages(12);
+    // 入场：乐手从两侧入口鱼贯而入，沿过道走进各排、从里往外依次落座，合唱团一层层走上台阶。
+    // 上台的时间表比 walkOn 长：观众入座时乐手已经在陆续上台了，开场这一刻只剩最后 walkOn 秒
+    const plan = orchestra.planWalkOn({ speed: E.walkSpeed, avoid: [conductor.podium] });
+    const lead = Math.max(0, plan.duration - E.walkOn);
+    const walking = background(orchestra.walkOn(tl, { lead }, signal)); // 下面还会 await；被跳过时不留未处理的拒绝
+    await rig.take('establish', E.establish, tl, signal);
+    shoot('walkOn', Math.max(0.5, plan.duration - lead - E.establish) + E.settle);
+    await walking;
+    orchestra.turnPages(12);
     this.#pageTurnSounds(6, E.settle, signal);
     await tl.wait(E.settle, signal);
 
-    // 调音：首席起立，双簧管给 A，全团跟上
+    // 调音：首席起立（近景），双簧管给 A（有双簧管就切过去），全团跟上（斜拍弦乐区）
     const T = C.tuning;
+    const cm = orchestra.concertmaster;
+    const oboe = orchestra.musicians.find((m) => m.section === 'oboe');
     audio.setMurmur(E.murmur * 0.55, 2);
-    world.orchestra.standConcertmaster(true);
+    orchestra.standConcertmaster(true);
+    shoot('portrait', T.standUp + (oboe ? 0 : T.oboeSolo), cm);
     await tl.wait(T.standUp, signal);
     audio.tuneOboe(T.oboe);
+    if (oboe) shoot('portrait', T.oboeSolo, oboe);
     await tl.wait(T.oboeSolo, signal);
-    world.orchestra.setTuning(true);
+    orchestra.setTuning(true);
     audio.tuneTutti(T.tutti);
+    shoot('tutti', T.tutti + T.sitDown);
     await tl.wait(T.tutti, signal);
-    world.orchestra.setTuning(false);
-    world.orchestra.standConcertmaster(false);
+    orchestra.setTuning(false);
+    orchestra.standConcertmaster(false);
     await tl.wait(T.sitDown, signal);
 
-    // 观众席灯光从后往前逐排熄灭，交谈声渐弱，巨幕标题卡淡出
+    // 观众席灯光从后往前逐排熄灭，交谈声渐弱，巨幕标题卡淡出（楼座大全景）
     const H = C.houseDown;
+    const K = C.conductor;
     audio.setMurmur(0, H.murmurFade);
     world.screen.set({ card: 0 }, H.cardFade);
     world.stageLights.setLevel(H.stageLevel);
     world.stageLights.setBeams(H.beams);
-    await world.house.fadeRows(0, { from: 'back', stagger: H.rowStagger, fade: H.rowFade }, tl, signal);
-    await tl.wait(H.hold, signal);
+    shoot('house', H.conductorAt + K.overview);
+    background(world.house.fadeRows(0, { from: 'back', stagger: H.rowStagger, fade: H.rowFade }, tl, signal));
+    await tl.wait(H.conductorAt, signal);
 
-    // 指挥上台：全场鼓掌，与首席握手，走上指挥台，向观众鞠躬，转身面向乐团
-    const K = C.conductor;
+    // 指挥上台：全场鼓掌，他从左侧入口沿台口走到首席身边（跟拍），握手，走上指挥台，向观众鞠躬，转身面向乐团
     this.#applause({ strength: K.applause, duration: K.applauseDuration });
     world.stageLights.setFollow(true);
-    const cm = world.orchestra.concertmaster;
-    const nearCm = new Vector3(cm.seat.x + 0.75, STAGE_Y, cm.seat.z + 0.45);
-    world.conductor.place(WINGS.left, Math.PI / 2);
-    await world.conductor.walk([new Vector3(-6, STAGE_Y, -0.7), nearCm], K.walkOn, tl, signal);
-    world.conductor.faceTowards(cm.seat);
-    world.orchestra.standConcertmaster(true);
-    world.conductor.setPose('handshake');
+    // 握手的位置：首席前方、靠观众席一侧，不贴着他的谱架（首席起立后站在椅子前面一步）
+    const fwd = new Vector3(Math.sin(cm.yaw), 0, Math.cos(cm.yaw));
+    const partner = orchestra.standingSpot(cm);
+    const meet = cm.seat.clone().setY(STAGE_Y).addScaledVector(fwd.add(new Vector3(0, 0, 1.2)).normalize(), 0.95);
+    let route = plan.route(WINGS.left, meet);
+    route = route.length > 2 ? route.slice(1) : [WINGS.left.clone(), meet]; // 去掉侧墙边那一点：指挥从入口直接出来
+    conductor.place(route[0], Math.PI / 2);
+    background(tl.wait(K.overview, signal).then(() => rig.take('conductorWalk', K.walkOn - K.overview, tl, signal, conductor.body.position)));
+    await conductor.walk(route.slice(1), K.walkOn, tl, signal);
+    conductor.faceTowards(partner);
+    orchestra.standConcertmaster(true);
+    conductor.setPose('handshake');
+    shoot('handshake', K.handshake + K.toPodium, { conductor: conductor.body.position, partner });
     await tl.wait(K.handshake, signal);
-    world.conductor.setPose('rest');
-    world.orchestra.standConcertmaster(false);
-    await world.conductor.walk([PODIUM.clone()], K.toPodium, tl, signal);
-    world.conductor.face('audience');
+    conductor.setPose('rest');
+    orchestra.standConcertmaster(false);
+    // 从台口一侧绕上指挥台，不擦着首席的谱架
+    const step = new Vector3((meet.x + PODIUM.x) / 2, STAGE_Y, Math.max(meet.z, PODIUM.z) + 0.45);
+    await conductor.walk([step, PODIUM.clone()], K.toPodium, tl, signal);
+    conductor.face('audience');
+    shoot('bow', K.turn + K.bow);
     await tl.wait(K.turn, signal);
-    await world.conductor.bowOnce(K.bow, tl, signal);
-    world.conductor.face('orchestra');
+    await conductor.bowOnce(K.bow, tl, signal);
+    conductor.face('orchestra');
     world.stageLights.setFollow(false);
-    await tl.wait(K.turn, signal);
+    await rig.returnToSeat(K.toSeat, tl, signal);
   }
 
   /** 跳过开演前：所有人直接就位、熄灯 */
