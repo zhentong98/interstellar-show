@@ -1,0 +1,72 @@
+{
+  "characters": [
+    {
+      "file": "scan-man-1.glb",
+      "gender": "man",
+      "roles": [
+        "strings",
+        "choir",
+        "timpani",
+        "organ"
+      ],
+      "height": 1.82
+    },
+    {
+      "file": "scan-man-2.glb",
+      "gender": "man",
+      "roles": [
+        "strings",
+        "choir",
+        "timpani",
+        "organ"
+      ],
+      "height": 1.8
+    },
+    {
+      "file": "scan-man-3.glb",
+      "gender": "man",
+      "roles": [
+        "strings",
+        "choir",
+        "timpani",
+        "organ"
+      ],
+      "height": 1.83
+    },
+    {
+      "file": "conductor.glb",
+      "gender": "man",
+      "roles": [
+        "conductor"
+      ],
+      "height": 1.82
+    },
+    {
+      "file": "scan-woman-1.glb",
+      "gender": "woman",
+      "roles": [
+        "strings",
+        "choir"
+      ],
+      "height": 1.66
+    },
+    {
+      "file": "scan-woman-2.glb",
+      "gender": "woman",
+      "roles": [
+        "strings",
+        "choir"
+      ],
+      "height": 1.64
+    },
+    {
+      "file": "scan-woman-3.glb",
+      "gender": "woman",
+      "roles": [
+        "strings",
+        "choir"
+      ],
+      "height": 1.65
+    }
+  ]
+}

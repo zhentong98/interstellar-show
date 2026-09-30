@@ -1,0 +1,630 @@
+/* 星际穿越 · 电影交响音乐会 */
+
+:root {
+  --night: #0b0907;
+  --ink: #221a13;
+  --ink-soft: #6b5b49;
+  --ink-faint: #9a8a74;
+  --paper: #f2ead9;
+  --gold: #9b7743;
+  --stamp: #8c2f24;
+  --serif-latin: "Cormorant Garamond", "EB Garamond", Georgia, serif;
+  --serif-cjk: "Noto Serif SC", "Source Han Serif SC", "Songti SC", "STSong", "SimSun", serif;
+  --serif: "Cormorant Garamond", "Noto Serif SC", "Source Han Serif SC", "Songti SC", "STSong", serif;
+
+  /* 纸张纹理：细颗粒噪点 + 横向纤维，全部是内联 SVG，不依赖外部图片 */
+  --paper-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .32 0 0 0 0 .25 0 0 0 0 .17 0 0 0 .11 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  --paper-fiber: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='400'%3E%3Cfilter id='f'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.012 .35' numOctaves='2' seed='4' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .45 0 0 0 0 .36 0 0 0 0 .24 0 0 0 .07 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23f)'/%3E%3C/svg%3E");
+}
+
+* {
+  box-sizing: border-box;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--night);
+  color: #e9e1d2;
+  font-family: var(--serif);
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  overflow: hidden;
+}
+
+/* ——— 3D 音乐厅 ——— */
+
+.show {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: #000;
+}
+
+.layer-css,
+.layer-gl {
+  position: absolute !important;
+  inset: 0;
+}
+
+.layer-css {
+  z-index: 0;
+  pointer-events: none;
+}
+
+.layer-gl {
+  z-index: 1;
+  pointer-events: none;
+}
+
+.screen-host {
+  background: #000;
+}
+
+.screen-host iframe {
+  display: block;
+  border: 0;
+}
+
+.cursor-hidden,
+.cursor-hidden * {
+  cursor: none !important;
+}
+
+/* ——— 纸张 ——— */
+
+.paper {
+  position: relative;
+  width: 100%;
+  max-width: 680px;
+  color: var(--ink);
+  background-color: var(--paper);
+  background-image:
+    var(--paper-grain),
+    var(--paper-fiber),
+    radial-gradient(ellipse at 50% 40%, rgba(255, 252, 240, 0.55), transparent 65%),
+    radial-gradient(ellipse at 50% 50%, transparent 55%, rgba(120, 90, 50, 0.16) 100%);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.4) inset,
+    0 30px 80px rgba(0, 0, 0, 0.55),
+    0 6px 18px rgba(0, 0, 0, 0.35);
+  padding: 56px 64px 44px;
+}
+
+/* 印刷的双线边框 */
+.paper::before {
+  content: "";
+  position: absolute;
+  inset: 16px;
+  border: 1px solid rgba(155, 119, 67, 0.55);
+  outline: 1px solid rgba(155, 119, 67, 0.3);
+  outline-offset: 4px;
+  pointer-events: none;
+}
+
+.kicker {
+  margin: 0 0 14px;
+  font-size: 12px;
+  letter-spacing: 0.32em;
+  text-align: center;
+  color: var(--ink-soft);
+}
+
+.paper h2 {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 30px 0 6px;
+  font-family: var(--serif-cjk);
+  font-weight: 600;
+  font-size: 14px;
+  letter-spacing: 0.5em;
+  color: var(--gold);
+}
+
+.paper h2::before,
+.paper h2::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(155, 119, 67, 0.6), transparent);
+}
+
+.fineprint {
+  margin: 22px 0 0;
+  font-size: 11.5px;
+  line-height: 1.7;
+  text-align: center;
+  color: var(--ink-faint);
+}
+
+/* ——— 节目单 ——— */
+
+.programme {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  overflow-y: auto;
+  display: grid;
+  place-items: start center;
+  padding: clamp(16px, 6vh, 64px) 16px;
+  background:
+    radial-gradient(ellipse at 50% 12%, rgba(120, 78, 36, 0.35), transparent 60%),
+    radial-gradient(ellipse at 50% 100%, #150e09, #070504 70%);
+}
+
+.programme.leaving {
+  pointer-events: none;
+  animation: programme-fade var(--leave, 1.2s) ease-in forwards;
+}
+
+.programme.leaving .programme-card {
+  animation: programme-lower var(--leave, 1.2s) ease-in forwards;
+}
+
+@keyframes programme-fade {
+  to {
+    background-color: transparent;
+    opacity: 0;
+  }
+}
+
+@keyframes programme-lower {
+  to {
+    transform: translateY(40vh) rotate(-2deg) scale(0.92);
+  }
+}
+
+.programme-head {
+  text-align: center;
+}
+
+.display {
+  margin: 0;
+  font-family: var(--serif-latin);
+  font-weight: 500;
+  font-size: clamp(30px, 7vw, 52px);
+  line-height: 1;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  /* 字距会在最后一个字母后多出一截，补回来保持居中 */
+  margin-right: -0.14em;
+}
+
+.subtitle {
+  margin: 12px 0 0;
+  font-family: var(--serif-cjk);
+  font-weight: 600;
+  font-size: 18px;
+  letter-spacing: 0.5em;
+  margin-right: -0.5em;
+}
+
+.credit {
+  margin: 14px 0 0;
+  font-family: var(--serif-cjk);
+  font-size: 13px;
+  letter-spacing: 0.12em;
+  color: var(--ink-soft);
+}
+
+.ornament {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 26px auto 0;
+  max-width: 240px;
+  font-size: 13px;
+  color: var(--gold);
+}
+
+.ornament span {
+  flex: 1;
+  height: 1px;
+  background: currentColor;
+  opacity: 0.6;
+}
+
+.section-note {
+  margin: 0 0 8px;
+  text-align: center;
+  font-family: var(--serif-cjk);
+  font-size: 12px;
+  color: var(--ink-faint);
+}
+
+.setlist ol,
+.played {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.song label {
+  display: grid;
+  grid-template-columns: 26px 40px 1fr;
+  align-items: start;
+  gap: 4px 12px;
+  padding: 14px 6px;
+  border-bottom: 1px dotted rgba(107, 91, 73, 0.35);
+  cursor: pointer;
+  transition: opacity 0.25s;
+}
+
+.song:last-child label {
+  border-bottom: 0;
+}
+
+.song input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.tick {
+  width: 20px;
+  height: 20px;
+  margin-top: 6px;
+  border: 1.5px solid var(--ink);
+  transform: rotate(-2deg);
+  display: grid;
+  place-items: center;
+}
+
+.tick svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 26;
+  stroke-dashoffset: 26;
+  transition: stroke-dashoffset 0.25s ease-out;
+  transform: translate(2px, -3px) rotate(-4deg);
+}
+
+.song input:checked + .tick svg {
+  stroke-dashoffset: 0;
+}
+
+.song input:focus-visible + .tick {
+  outline: 2px solid var(--gold);
+  outline-offset: 3px;
+}
+
+.song label:has(input:not(:checked)) {
+  opacity: 0.45;
+}
+
+.numeral {
+  font-family: var(--serif-latin);
+  font-size: 22px;
+  font-style: italic;
+  color: var(--gold);
+  text-align: right;
+  padding-top: 2px;
+}
+
+.song-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.song-title {
+  font-family: var(--serif-latin);
+  font-style: italic;
+  font-weight: 500;
+  font-size: 26px;
+  line-height: 1.1;
+}
+
+.song-scene {
+  font-family: var(--serif-cjk);
+  font-size: 14.5px;
+  letter-spacing: 0.06em;
+}
+
+.song-source {
+  font-family: var(--serif-cjk);
+  font-size: 12px;
+  color: var(--ink-soft);
+  letter-spacing: 0.04em;
+}
+
+.song-source a {
+  color: inherit;
+}
+
+.unofficial,
+.status {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  border: 1px solid currentColor;
+  border-radius: 2px;
+  font-style: normal;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  color: var(--stamp);
+  transform: rotate(-1.5deg);
+}
+
+.status {
+  font-family: var(--serif-cjk);
+  vertical-align: middle;
+}
+
+.ensemble p {
+  margin: 8px 0 0;
+  text-align: center;
+  font-family: var(--serif-cjk);
+  font-size: 13.5px;
+  letter-spacing: 0.14em;
+}
+
+.programme-foot {
+  margin-top: 30px;
+  text-align: center;
+}
+
+.enter,
+.again {
+  font-family: var(--serif-cjk);
+  font-weight: 600;
+  font-size: 18px;
+  letter-spacing: 0.8em;
+  padding: 14px 40px 14px calc(40px + 0.8em);
+  color: var(--paper);
+  background: var(--ink);
+  border: 0;
+  cursor: pointer;
+  box-shadow:
+    0 0 0 1px var(--ink),
+    0 0 0 4px var(--paper),
+    0 0 0 5px rgba(34, 26, 19, 0.6);
+  transition: background 0.2s, transform 0.2s;
+}
+
+.enter:hover:not(:disabled),
+.again:hover {
+  background: #3b2c1f;
+}
+
+.enter:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.enter:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.enter:focus-visible,
+.again:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 8px;
+}
+
+.enter-note {
+  margin: 20px 0 0;
+  font-family: var(--serif-cjk);
+  font-size: 12.5px;
+  line-height: 1.8;
+  color: var(--ink-soft);
+}
+
+/* ——— 演出中的控制条与提示 ——— */
+
+.controls {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px max(18px, env(safe-area-inset-bottom));
+  pointer-events: none;
+}
+
+.controls-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  padding: 7px 8px 7px 18px;
+  font-family: var(--serif-cjk);
+  font-size: 13px;
+  color: #d8ccb6;
+  background: rgba(14, 11, 8, 0.72);
+  border: 1px solid rgba(255, 232, 196, 0.14);
+  border-radius: 999px;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  opacity: 0;
+  transform: translateY(14px);
+  transition: opacity 0.35s, transform 0.35s;
+}
+
+.controls-bar.visible {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+
+.controls-status {
+  margin-right: 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: 0.08em;
+}
+
+.controls-bar button {
+  flex: none;
+  font: inherit;
+  letter-spacing: 0.1em;
+  color: #f0e6d4;
+  background: transparent;
+  border: 1px solid rgba(255, 232, 196, 0.25);
+  border-radius: 999px;
+  padding: 6px 14px;
+  cursor: pointer;
+}
+
+.controls-bar button:hover {
+  background: rgba(255, 232, 196, 0.1);
+}
+
+.show-prompt {
+  font-family: var(--serif-cjk);
+  font-size: 15px;
+  letter-spacing: 0.1em;
+  color: #f4ecdc;
+  background: rgba(14, 11, 8, 0.8);
+  border: 1px solid rgba(255, 232, 196, 0.2);
+  border-radius: 999px;
+  padding: 10px 22px;
+  animation: prompt-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes prompt-pulse {
+  50% {
+    border-color: rgba(255, 232, 196, 0.55);
+  }
+}
+
+/* ——— 节目单背面 ——— */
+
+.backpage {
+  position: fixed;
+  inset: 0;
+  z-index: 12;
+  overflow-y: auto;
+  display: grid;
+  place-items: start center;
+  padding: clamp(16px, 6vh, 64px) 16px;
+  background: rgba(6, 5, 4, 0.86);
+  opacity: 0;
+  transition: opacity 1.6s ease;
+}
+
+.backpage.visible {
+  opacity: 1;
+}
+
+.backpage-card {
+  animation: card-rise 1.6s ease-out both;
+}
+
+@keyframes card-rise {
+  from {
+    transform: translateY(30px);
+  }
+}
+
+.played li {
+  display: grid;
+  grid-template-columns: 40px 1fr;
+  gap: 12px;
+  padding: 12px 6px;
+  border-bottom: 1px dotted rgba(107, 91, 73, 0.35);
+}
+
+.credits {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--serif-cjk);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.credits th,
+.credits td {
+  text-align: left;
+  padding: 6px 6px;
+  border-bottom: 1px solid rgba(107, 91, 73, 0.25);
+  vertical-align: top;
+}
+
+.credits th {
+  font-weight: 600;
+  color: var(--ink-soft);
+  letter-spacing: 0.2em;
+}
+
+.credits a {
+  color: var(--ink);
+}
+
+.again {
+  display: block;
+  margin: 30px auto 4px;
+}
+
+/* ——— 调试面板（?debug） ——— */
+
+.debug-hud {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  z-index: 20;
+  margin: 0;
+  padding: 10px 12px;
+  font: 12px/1.5 ui-monospace, "SF Mono", Menlo, monospace;
+  color: #cfe8d8;
+  background: rgba(0, 0, 0, 0.62);
+  border-radius: 6px;
+  pointer-events: none;
+  white-space: pre;
+}
+
+/* ——— 窄屏 ——— */
+
+@media (max-width: 560px) {
+  .paper {
+    padding: 40px 26px 32px;
+  }
+
+  .paper::before {
+    inset: 10px;
+  }
+
+  .song label {
+    grid-template-columns: 24px 30px 1fr;
+    gap: 4px 8px;
+  }
+
+  .song-title {
+    font-size: 22px;
+  }
+
+  .enter,
+  .again {
+    letter-spacing: 0.5em;
+    padding: 12px 28px 12px calc(28px + 0.5em);
+  }
+
+  .controls-status {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .programme.leaving .programme-card,
+  .backpage-card {
+    animation: none;
+  }
+}
