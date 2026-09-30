@@ -28,6 +28,7 @@ import {
 } from './instruments.js';
 import { organKeys } from './textures.js';
 import { LUX, candela, whiteMaterial } from './lightBudget.js';
+import { planWalkOn, distanceAt, dampAngle, lerpAngle, walkStride, TURN_TIME, SIT_TIME } from './walkPaths.js';
 
 // 白色漫反射材质按 lightBudget.js 的反照率上限取色；金属留一点粗糙度，
 // 顶光在鼓圈、鼓身上是一道柔和的高光，而不是一圈被 Bloom 晕开的亮环
@@ -144,6 +145,9 @@ function blend(out, a, b, k) {
 // ——— 乐手 ———
 
 const STRINGS = ['violin1', 'violin2', 'viola', 'cello', 'bass'];
+
+/** 坐着演奏的人起立时往前迈多远（米）：站在椅子前沿和谱架之间 */
+const STAND_STEP = 0.4;
 
 /** 声部 → 演员表里的角色类型 */
 const ROLE_OF = { violin1: 'strings', violin2: 'strings', viola: 'strings', cello: 'strings', bass: 'strings', choir: 'choir', timpani: 'timpani', organ: 'organ' };
@@ -558,8 +562,8 @@ export class Orchestra {
     const walking = m.walk > 0 && m.walk < 1;
     const pose = BAKE_POSES[g.kind].find((p) => p.test(m))?.name ?? BAKE_POSES[g.kind][0].name;
     if (m.present) {
-      const yaw = walking ? Math.atan2(m.seat.x - m.entry.x, m.seat.z - m.entry.z) : m.yaw;
-      const bob = walking ? Math.abs(Math.sin(t * 7 + m.phase)) * 0.03 : 0;
+      const yaw = m.facing ?? m.yaw;
+      const bob = walking ? Math.abs(Math.sin(m.walkPhase)) * 0.03 : 0;
       q.setFromAxisAngle(v.set(0, 1, 0), yaw);
       R.compose(v.copy(m.pos).setY(m.pos.y + bob), q, s.setScalar(m.look.scale));
       // 绕髋部前倾（演奏时的律动、鞠躬）
@@ -585,27 +589,107 @@ export class Orchestra {
 
   // ——— 对外接口：导演调用 ———
 
-  /** 乐手陆续从侧台走上来就位（大体上远处的先走），全部到位后 resolve */
-  walkOn(timeline, { spread, speed }, signal) {
-    const order = this.musicians
-      .map((m) => ({ m, key: m.entry.distanceTo(m.seat) + range(this.rand, 0, 3) }))
-      .sort((a, b) => b.key - a.key)
-      .map((o) => o.m);
-    const jobs = order.map((m, i) => {
-      const delay = (i / order.length) * spread + range(this.rand, 0, 0.4);
-      const dist = m.entry.distanceTo(m.seat);
-      const duration = dist / (speed * range(this.rand, 0.85, 1.1));
-      return timeline.animate(duration, (k) => {
-        m.present = true;
-        m.walk = k;
-        m.pos.lerpVectors(m.entry, m.seat, k);
-        if (k >= 1) {
-          m.sitTarget = m.seated ? 1 : 0;
-          m.hasMusic = true;
+  // ——— 上台 ———
+
+  /**
+   * 规划上台的走位：每个人的路线和出发时间（算法见 walkPaths.js），算一次缓存起来。
+   * @param {object} [options]
+   *   speed  平均步速（米/秒）
+   *   avoid  乐团以外也要绕开的道具（例如指挥台）
+   * @returns {{ duration: number, route: Function }} duration：从第一个人出场到最后一个人坐好的秒数
+   */
+  planWalkOn({ speed = 1.4, avoid = [] } = {}) {
+    if (!this.walkPlan) {
+      this.group.updateMatrixWorld(true);
+      this.walkPlan = planWalkOn({ musicians: this.musicians, obstacles: [...this.#props(), ...avoid], speed });
+    }
+    return this.walkPlan;
+  }
+
+  /** 舞台上的道具：乐团组里除了人、乐器、乐谱以外的东西（椅子、谱架、台阶、定音鼓、管风琴台……） */
+  #props() {
+    const skip = new Set([this.sheets, this.pages, this.crowd?.group, ...Object.values(this.parts)]);
+    for (const m of this.musicians) if (m.rig?.root) skip.add(m.rig.root);
+    for (const g of this.bakedGroups?.values() ?? []) {
+      for (const p of Object.values(g.poses)) for (const mesh of p.meshes) skip.add(mesh);
+    }
+    return this.group.children.filter((o) => !skip.has(o) && !o.isLight);
+  }
+
+  /**
+   * 乐手从两侧入口鱼贯而入，沿过道走进各排，从里往外依次转身落座；合唱团一层一层从台阶一端上去。
+   * lead：开场这一刻已经走了多少秒（最早出场的几位这时已经在台上了）。全部就位后 resolve。
+   */
+  walkOn(timeline, { lead = 0, speed, avoid } = {}, signal) {
+    const plan = this.planWalkOn({ speed, avoid });
+    const span = Math.max(0.01, plan.duration - lead);
+    let last = lead;
+    for (const w of plan.walkers) {
+      w.m.present = false;
+      w.m.walk = 0;
+      w.seated = false;
+    }
+    return timeline.animate(span, (k) => {
+      const t = lead + k * span;
+      const dt = Math.max(0, t - last);
+      last = t;
+      for (const w of plan.walkers) this.#stepWalker(w, t, dt);
+    }, { ease: (k) => k, signal });
+  }
+
+  /** 一位乐手在上台时间表第 t 秒的状态：还没出场 / 走路 / 到位转身 / 坐下 */
+  #stepWalker(w, t, dt) {
+    const m = w.m;
+    if (t < w.start) {
+      m.present = false;
+      m.walk = 0;
+      return;
+    }
+    m.present = true;
+    const walked = t - w.start;
+    if (walked < w.duration) {
+      const s = distanceAt(w, walked);
+      w.path.at(s, m.pos);
+      // 朝向看前方一小段路，拐弯时提前转身、平滑地转过去
+      const ahead = w.path.heading(s + 0.3);
+      m.facing = m.walk > 0 && m.walk < 1 ? dampAngle(m.facing, ahead, 9, dt) : ahead;
+      m.walk = 0.5;
+      w.gait ??= walkStride(w.v);
+      m.stride = w.gait.amount;
+      m.walkPhase = w.phase + s * w.gait.phasePerMeter;
+      w.arriveYaw = m.facing;
+      w.arrivePhase = m.walkPhase;
+      return;
+    }
+    const u = walked - w.duration;
+    if (u < TURN_TIME) {
+      // 到位：原地转身面向指挥（坐着的人背对椅子），脚下跟着挪一两步
+      m.pos.copy(w.stand);
+      const f = u / TURN_TIME;
+      m.facing = lerpAngle(w.arriveYaw ?? m.yaw, m.yaw, f * f * (3 - 2 * f));
+      m.walk = 0.5;
+      m.walkPhase = (w.arrivePhase ?? 0) + f * Math.PI;
+      return;
+    }
+    m.facing = m.yaw;
+    m.walk = 1;
+    m.hasMusic = true;
+    if (m.seated) {
+      // 坐下：从椅子前面退到椅子上（退回去的动作由 update 里的"起立前迈一步"平滑完成）
+      m.sitTarget = 1;
+      if (this.standOf.has(m.index)) {
+        if (!w.seated) {
+          w.seated = true;
+          m.step = 1;
         }
-      }, { delay, ease: (k) => k, signal });
-    });
-    return Promise.all(jobs);
+      } else {
+        // 没有椅子的（管风琴的琴凳）：从站位直接挪到座位上
+        const f = Math.min(1, (u - TURN_TIME) / SIT_TIME);
+        m.pos.lerpVectors(w.stand, m.seat, 1 - (1 - f) * (1 - f));
+      }
+    } else {
+      m.pos.copy(m.seat);
+    }
   }
 
   /** 跳过入场时直接就位 */
@@ -614,6 +698,8 @@ export class Orchestra {
       m.present = true;
       m.walk = 1;
       m.pos.copy(m.seat);
+      m.facing = m.yaw;
+      m.step = 0;
       m.sit = m.sitTarget = m.seated ? 1 : 0;
       m.hasMusic = true;
     }
@@ -625,6 +711,12 @@ export class Orchestra {
 
   standConcertmaster(standing) {
     this.concertmaster.sitTarget = standing ? 0 : 1;
+  }
+
+  /** 有椅子的人站起来之后站在哪里（椅子前面一步），没有椅子的就是座位本身 */
+  standingSpot(m) {
+    const d = this.standOf.has(m.index) && m.seated ? STAND_STEP : 0;
+    return new THREE.Vector3(m.seat.x + Math.sin(m.yaw) * d, m.seat.y, m.seat.z + Math.cos(m.yaw) * d);
   }
 
   /** 调音：弦乐把乐器架起来，弓子短促地来回 */
@@ -689,6 +781,12 @@ export class Orchestra {
       m.sit = damp(m.sit, m.sitTarget, 5, dt);
       m.raise = damp(m.raise, m.raiseTarget, 4 * m.rate, dt);
       m.bow = damp(m.bow, m.bowTarget, 4, dt);
+      // 有椅子的人起立时（首席调音、握手，谢幕）往前迈一小步，站在椅子和谱架之间，不和椅子重叠；坐下时退回去
+      if (m.walk >= 1 && m.seated && this.standOf.has(m.index)) {
+        m.step = damp(m.step ?? 0, m.sitTarget < 0.5 ? 1 : 0, 6, dt);
+        const d = STAND_STEP * m.step;
+        m.pos.set(m.seat.x + Math.sin(m.yaw) * d, m.seat.y, m.seat.z + Math.cos(m.yaw) * d);
+      }
 
       // 弦乐：从声部的弓法里取自己的弓段位置（每人差一点点时间和弓长），左手换把、揉弦、按指
       const sec = this.bowing[m.section];
@@ -723,7 +821,7 @@ export class Orchestra {
         this.#hideInstrument(m);
         continue;
       }
-      if (m.walk > 0 && m.walk < 1) m.walkPhase += dt * 7.5;
+      // 走路的步伐相位由上台的时间表按走过的距离推进（walkOn）
       // 真实模型的上身动作捕捉（坐着的人用坐姿动作，站着的用站姿动作）
       // 演奏时（raise）收掉大部分待机动作：待机坐姿是放松的弯腰驼背，乐手演奏时坐得直，只留一成多的活气
       m.keepUpper = m.rig.animate && m.rig.animate(dt) && (m.seated ? m.sit > 0.6 : m.sit < 0.4) ? 1 - 0.85 * m.raise : 0;
@@ -746,8 +844,7 @@ export class Orchestra {
   #poseMusician(m, t, perf) {
     const rig = m.rig;
     const walking = m.walk > 0 && m.walk < 1;
-    let yaw = m.yaw;
-    if (walking) yaw = Math.atan2(m.seat.x - m.entry.x, m.seat.z - m.entry.z);
+    const yaw = m.facing ?? m.yaw; // 走路时朝着前进方向（walkOn 写入）
     rig.root.position.copy(m.pos);
     rig.root.rotation.set(0, yaw, 0);
     const choir = m.section === 'choir';
@@ -763,7 +860,7 @@ export class Orchestra {
       bow: m.bow,
       headYaw: m.headYaw,
       headPitch: 0.12 * raise,
-      walk: walking ? 1 : 0,
+      walk: walking ? m.stride ?? 1 : 0,
       phase: m.walkPhase,
       breathe: t * 1.1 + m.phase,
       breatheAmp: 0.01,
