@@ -27,6 +27,7 @@
 
 ## 原创内容
 
+- 木管和圆号（长笛、双簧管、单簧管、大管、圆号：`src/stage/instruments.js`）、三角钢琴和琴凳（`src/stage/piano.js`）：程序化几何体 + PBR 材质，不使用外部模型。
 - 掌声、观众交谈、咳嗽、翻谱、乐团调音（A = 440Hz）、黑洞过渡的低频氛围：`src/audio/sfx.js` 用 Web Audio 程序化合成，不采样任何录音，也不模仿原曲旋律。
 - 黑洞 Gargantua 过渡画面：`src/stage/gargantua.glsl.js` 自绘着色器。
 - 人物：`src/stage/humans/` 按骨骼程序化生成的身体（燕尾服、衬衫、礼服裙、多种发型），骨骼命名与 Mixamo 一致。

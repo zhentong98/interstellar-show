@@ -63,15 +63,19 @@ const OPENING = {
     target: [v(-3.6, 1.5, -3.3), v(0.8, 1.8, -5.6), v(6.6, 2.1, -8.8)],
     fov: 42,
   },
-  // 调音：某一位乐手（首席、双簧管）的中近景，从他前方偏观众席一侧拍，慢慢推近
+  // 调音：某一位乐手（首席、双簧管）的中近景，慢慢推近。
+  // 站着的人从他前方偏观众席一侧拍；坐着的人正前方是谱架，改从观众席一侧的侧面稍高处拍，避开谱架
   portrait: (m) => {
     const fwd = v(Math.sin(m.yaw), 0, Math.cos(m.yaw));
-    const dir = fwd.clone().add(v(0, 0, 1)).normalize();
     const standing = m.sitTarget < 0.5;
-    const height = STAGE_Y + (standing ? 1.42 : 1.05);
+    const side = v(fwd.z, 0, -fwd.x);
+    if (side.z < 0) side.negate();
+    const dir = standing ? fwd.clone().add(v(0, 0, 1)).normalize() : side.addScaledVector(fwd, 0.35).normalize();
+    // 高度按座位算（木管坐在台阶上，座位比舞台面高）
+    const height = m.seat.y + (standing ? 1.42 : 1.05);
     // 机位按站起来（往前迈一步）之后的位置定；注视点跟着人走
     const at = m.seat.clone().addScaledVector(fwd, standing ? 0.4 : 0.12).setY(height);
-    const pos = at.clone().addScaledVector(dir, 2.5).setY(height + 0.18);
+    const pos = at.clone().addScaledVector(dir, 2.5).setY(height + (standing ? 0.18 : 0.4));
     return {
       pos: [pos, pos.clone().lerp(at, 0.07)],
       target: () => _follow.copy(m.pos).addScaledVector(fwd, 0.1).setY(height),
@@ -133,6 +137,8 @@ export const SHOTS = {
   organ: { label: '管风琴', key: '7', pos: v(2.7, 2.5, -7.0), target: v(0.3, 1.8, -8.6), fov: 36 },
   // 放在定音鼓的左后方，定音鼓手不会挡在前景里
   choir: { label: '合唱团', key: '8', pos: v(2.0, 3.3, -4.8), target: v(6.8, 2.6, -9.2), fov: 40 },
+  // 从指挥右前方高处斜着俯拍木管两排：越过前排谱架看到吹奏的人和乐器，背景是管风琴控制台
+  winds: { label: '木管', key: '9', pos: v(2.7, 3.5, -2.0), target: v(1.1, 2.0, -6.1), fov: 34 },
 };
 
 /** 观众能选的全部镜头（按控制条上的顺序） */
@@ -157,7 +163,7 @@ const AUTO = {
   // 特写机位被选中的权重
   weights: {
     wide: [1.5, 2.5], conductor: [2, 2], violins: [2, 1.5], cellos: [1.5, 1.5],
-    timpani: [0.3, 1.5], organ: [1, 1], choir: [1, 1.5],
+    timpani: [0.3, 1.5], organ: [1, 1], choir: [1, 1.5], winds: [1.5, 1],
   },
   seatHold: [16, 11],
   shotHold: [5.5, 4.5],

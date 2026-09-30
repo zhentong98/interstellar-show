@@ -7,7 +7,10 @@
         "strings",
         "choir",
         "timpani",
-        "organ"
+        "organ",
+        "winds",
+        "brass",
+        "piano"
       ],
       "height": 1.82
     },
@@ -18,7 +21,8 @@
         "strings",
         "choir",
         "timpani",
-        "organ"
+        "organ",
+        "winds"
       ],
       "height": 1.8
     },
@@ -35,7 +39,10 @@
       "gender": "woman",
       "roles": [
         "strings",
-        "choir"
+        "choir",
+        "winds",
+        "brass",
+        "piano"
       ],
       "height": 1.66
     },
@@ -44,7 +51,10 @@
       "gender": "woman",
       "roles": [
         "strings",
-        "choir"
+        "choir",
+        "winds",
+        "brass",
+        "piano"
       ],
       "height": 1.64
     },
@@ -53,7 +63,10 @@
       "gender": "woman",
       "roles": [
         "strings",
-        "choir"
+        "choir",
+        "winds",
+        "brass",
+        "piano"
       ],
       "height": 1.65
     }
