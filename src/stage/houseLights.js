@@ -4,19 +4,26 @@
 
 import * as THREE from 'three';
 import { SEATING } from './layout.js';
+import { LUX, candela } from './lightBudget.js';
+
+const WASH_COLOR = 0xffd2a0;
+const WASH_HEIGHT = 19.5;
+const HEAD_HEIGHT = 2; // 观众头顶的大致高度（池座前后排平均）
 
 export class HouseLights {
   constructor(lamps) {
     this.lamps = lamps; // { mesh, rowOf }
     this.levels = new Float32Array(SEATING.rows + 1).fill(1);
-    this.hemi = new THREE.HemisphereLight(0xffe0c0, 0x1a110b, 1.4);
+    // 厅内的暖色漫反射补光（照度约为洗墙光的六分之一）；环境贴图另外提供一部分，见 World
+    this.hemi = new THREE.HemisphereLight(0xffe0c0, 0x1a110b, 0);
     this.hemi.position.set(0, 20, 10);
-    // 天花的两大片暖色洗墙光：开演前满场暖黄，熄灯后完全关掉
+    // 天花的两大片暖色洗墙光：开演前满场暖黄，熄灯后完全关掉。
+    // 按观众头顶的照度定亮度（lightBudget.js）；光锥收窄一点，少往舞台上溢
     this.washes = [8, 22].map((z) => {
-      const l = new THREE.SpotLight(0xffd2a0, 0, 0, 0.95, 0.8, 2);
-      l.position.set(0, 19.5, z);
+      const l = new THREE.SpotLight(WASH_COLOR, 0, 0, 0.8, 0.9, 2);
+      l.position.set(0, WASH_HEIGHT, z);
       l.target.position.set(0, 0, z + 1);
-      l.baseIntensity = 5200;
+      l.baseIntensity = candela(LUX.house, WASH_HEIGHT - HEAD_HEIGHT, WASH_COLOR);
       return l;
     });
     this.lampColor = new THREE.Color(0xffd6a0);
@@ -52,7 +59,7 @@ export class HouseLights {
 
   update() {
     const avg = this.average;
-    this.hemi.intensity = 0.06 + 1.8 * avg;
+    this.hemi.intensity = 0.03 + 0.35 * avg;
     // 前半场、后半场各一盏，分别跟随对应几排的亮度（逐排熄灭时从后往前暗下去）
     const half = SEATING.rows / 2;
     let front = 0;
@@ -71,7 +78,8 @@ export class HouseLights {
     const { mesh, rowOf } = this.lamps;
     for (let i = 0; i < rowOf.length; i++) {
       const level = this.levels[rowOf[i]];
-      mesh.setColorAt(i, this.tmpColor.copy(this.lampColor).multiplyScalar(0.03 + 2.2 * level));
+      // 灯具发光面比 Bloom 门槛亮一截，亮灯时会微微晕开
+      mesh.setColorAt(i, this.tmpColor.copy(this.lampColor).multiplyScalar(0.05 + 4 * level));
     }
     mesh.instanceColor.needsUpdate = true;
   }

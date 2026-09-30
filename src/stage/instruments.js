@@ -7,6 +7,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { instrumentWood } from './textures.js';
+import { whiteMaterial } from './lightBudget.js';
 
 const C = {
   wood: new THREE.Color(0xffffff), // 乘木纹贴图
@@ -15,9 +16,9 @@ const C = {
   string: new THREE.Color(0x9a9a9a),
   stick: new THREE.Color(0x3a1c0e),
   hair: new THREE.Color(0xb3ab96), // 马尾是略带黄的米色，太白会在追光下发光
-  felt: new THREE.Color(0xd8d0c0),
+  felt: whiteMaterial(0xd8d0c0),
   folder: new THREE.Color(0x0a0a0a),
-  paper: new THREE.Color(0xe8e2d2),
+  paper: whiteMaterial(0xe8e2d2),
 };
 
 function colored(geo, color) {

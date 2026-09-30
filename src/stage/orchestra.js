@@ -26,18 +26,23 @@ import {
   VIOLIN_POINTS, CELLO_SCALE, BOW, varnish, accessory,
 } from './instruments.js';
 import { organKeys } from './textures.js';
+import { LUX, candela, whiteMaterial } from './lightBudget.js';
 
+// 白色漫反射材质按 lightBudget.js 的反照率上限取色；金属留一点粗糙度，
+// 顶光在鼓圈、鼓身上是一道柔和的高光，而不是一圈被 Bloom 晕开的亮环
 const mat = {
   chair: new THREE.MeshStandardMaterial({ color: 0x121212, roughness: 0.55, metalness: 0.2 }),
   stand: new THREE.MeshStandardMaterial({ color: 0x151515, roughness: 0.35, metalness: 0.7 }),
-  paper: new THREE.MeshStandardMaterial({ color: 0xe8e2d4, roughness: 0.9, side: THREE.DoubleSide }),
-  copper: new THREE.MeshPhysicalMaterial({ color: 0xc77b45, metalness: 1, roughness: 0.24, clearcoat: 0.6, clearcoatRoughness: 0.2 }),
-  chrome: new THREE.MeshStandardMaterial({ color: 0xdadada, metalness: 1, roughness: 0.15 }),
-  drumHead: new THREE.MeshStandardMaterial({ color: 0x7d7566, roughness: 0.75, emissive: 0xffe0b0, emissiveIntensity: 0 }),
+  paper: new THREE.MeshStandardMaterial({ color: whiteMaterial(0xe8e2d4), roughness: 0.9, side: THREE.DoubleSide }),
+  copper: new THREE.MeshPhysicalMaterial({ color: 0xc77b45, metalness: 1, roughness: 0.34, clearcoat: 0.5, clearcoatRoughness: 0.3 }),
+  chrome: new THREE.MeshStandardMaterial({ color: 0xcfcfcf, metalness: 1, roughness: 0.42 }),
+  // 鼓皮是羊皮纸色的小牛皮，反照率约 0.3
+  drumHead: new THREE.MeshStandardMaterial({ color: 0xa0977f, roughness: 0.75, emissive: 0xffe0b0, emissiveIntensity: 0 }),
   riser: new THREE.MeshStandardMaterial({ color: 0x1d1611, roughness: 0.6 }),
   console: new THREE.MeshPhysicalMaterial({ color: 0x3e2413, roughness: 0.35, clearcoat: 0.8, clearcoatRoughness: 0.25 }),
   keys: new THREE.MeshStandardMaterial({ map: organKeys(), roughness: 0.35 }),
-  lamp: new THREE.MeshBasicMaterial({ color: 0xffc27a }),
+  // 台灯的发光面本身比被照亮的表面亮得多，才会被 Bloom 晕开
+  lamp: new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffc27a).multiplyScalar(3) }),
 };
 
 // ——— 布局 ———
@@ -418,7 +423,8 @@ export class Orchestra {
     const bench = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.5, 1.3).translate(0.95, 0.25, 0), mat.console);
     // 谱架上方的小台灯：暖光，会被 bloom 晕开
     const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.03, 0.5).translate(0.05, 1.52, 0), mat.lamp);
-    const lampLight = new THREE.PointLight(0xffb870, 1.2, 2.2, 2);
+    // 台灯照在琴键上（约 0.5 米）的照度是主光的三成：够看清琴键，又不会让键盘像灯管一样发亮
+    const lampLight = new THREE.PointLight(0xffb870, candela(0.3 * LUX.key, 0.5, 0xffb870), 2.2, 2);
     lampLight.position.set(0.25, 1.35, 0);
     for (const mesh of [cabinet, manuals, pedals, bench]) {
       mesh.castShadow = true;
