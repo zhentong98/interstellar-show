@@ -4,22 +4,32 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { seededRandom, range } from '../core/math.js';
+import { stageFloor, wallWood, pipeGlow } from './textures.js';
 import {
   STAGE_Y, STAGE, HALL, SCREEN, SEATING, rowZ, rowFloorY,
 } from './layout.js';
 
 const box = (w, h, d, x, y, z) => new THREE.BoxGeometry(w, h, d).translate(x, y, z);
 
+const floorTexture = stageFloor().clone();
+floorTexture.repeat.set(10, 5);
+floorTexture.needsUpdate = true;
+
 export const materials = {
-  wallWood: new THREE.MeshStandardMaterial({ color: 0x5a3b26, roughness: 0.62 }),
-  finWood: new THREE.MeshStandardMaterial({ color: 0x8a6040, roughness: 0.5 }),
-  stageFloor: new THREE.MeshStandardMaterial({ color: 0x2e2118, roughness: 0.62 }),
+  wallWood: new THREE.MeshStandardMaterial({ color: 0xb08a6a, map: wallWood(), roughness: 0.6 }),
+  finWood: new THREE.MeshStandardMaterial({ color: 0x8a6040, roughness: 0.45 }),
+  // 舞台地板：蜂蜜色木板，半光泽，追光打下来会有一圈反光
+  stageFloor: new THREE.MeshStandardMaterial({ color: 0x8a7060, map: floorTexture, roughness: 0.55 }),
   stageFront: new THREE.MeshStandardMaterial({ color: 0x1c140f, roughness: 0.7 }),
   stallsFloor: new THREE.MeshStandardMaterial({ color: 0x3a2320, roughness: 0.95 }),
   ceiling: new THREE.MeshStandardMaterial({ color: 0x2b2420, roughness: 0.9 }),
   velvet: new THREE.MeshStandardMaterial({ color: 0x040404, roughness: 1 }),
   organCase: new THREE.MeshStandardMaterial({ color: 0x2a1a10, roughness: 0.5 }),
-  pipeMetal: new THREE.MeshStandardMaterial({ color: 0xa9a9ae, metalness: 1, roughness: 0.38 }),
+  // 音管：锡铅合金的金属光泽；底部发光渐变配合底光（强度由 StageLights 驱动）
+  pipeMetal: new THREE.MeshStandardMaterial({
+    color: 0xb4b4b8, metalness: 1, roughness: 0.3,
+    emissive: 0xffc890, emissiveMap: pipeGlow(), emissiveIntensity: 0,
+  }),
   pipeMouth: new THREE.MeshStandardMaterial({ color: 0x0a0a0a, roughness: 0.8 }),
   lamp: new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }),
 };

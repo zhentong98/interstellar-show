@@ -11,6 +11,14 @@ export class HouseLights {
     this.levels = new Float32Array(SEATING.rows + 1).fill(1);
     this.hemi = new THREE.HemisphereLight(0xffe0c0, 0x1a110b, 1.4);
     this.hemi.position.set(0, 20, 10);
+    // 天花的两大片暖色洗墙光：开演前满场暖黄，熄灯后完全关掉
+    this.washes = [8, 22].map((z) => {
+      const l = new THREE.SpotLight(0xffd2a0, 0, 0, 0.95, 0.8, 2);
+      l.position.set(0, 19.5, z);
+      l.target.position.set(0, 0, z + 1);
+      l.baseIntensity = 5200;
+      return l;
+    });
     this.lampColor = new THREE.Color(0xffd6a0);
     this.tmpColor = new THREE.Color();
     this.lastSignature = -1;
@@ -44,7 +52,17 @@ export class HouseLights {
 
   update() {
     const avg = this.average;
-    this.hemi.intensity = 0.06 + 1.35 * avg;
+    this.hemi.intensity = 0.06 + 1.8 * avg;
+    // 前半场、后半场各一盏，分别跟随对应几排的亮度（逐排熄灭时从后往前暗下去）
+    const half = SEATING.rows / 2;
+    let front = 0;
+    let back = 0;
+    for (let row = 1; row <= SEATING.rows; row++) {
+      if (row <= half) front += this.levels[row] / half;
+      else back += this.levels[row] / half;
+    }
+    this.washes[0].intensity = this.washes[0].baseIntensity * front;
+    this.washes[1].intensity = this.washes[1].baseIntensity * back;
     // 灯光没变化时不重复上传灯具颜色
     let signature = 0;
     for (let row = 1; row <= SEATING.rows; row++) signature += this.levels[row] * row;

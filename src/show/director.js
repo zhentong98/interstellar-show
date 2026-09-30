@@ -101,6 +101,8 @@ export class Director {
     const E = C.entrance;
     world.house.setAll(1);
     world.stageLights.setLevel(E.stageLevel);
+    world.stageLights.setBeams(E.beams);
+    world.stageLights.setMood('preshow');
     world.screen.snap({ curtain: 1, card: 1, gargantua: 0 });
     audio.setMurmur(E.murmur, 3);
 
@@ -133,6 +135,7 @@ export class Director {
     audio.setMurmur(0, H.murmurFade);
     world.screen.set({ card: 0 }, H.cardFade);
     world.stageLights.setLevel(H.stageLevel);
+    world.stageLights.setBeams(H.beams);
     await world.house.fadeRows(0, { from: 'back', stagger: H.rowStagger, fade: H.rowFade }, tl, signal);
     await tl.wait(H.hold, signal);
 
@@ -167,6 +170,7 @@ export class Director {
     world.orchestra.standConcertmaster(false);
     world.house.setAll(0);
     world.stageLights.setLevel(C.houseDown.stageLevel);
+    world.stageLights.setBeams(C.houseDown.beams);
     world.stageLights.setFollow(false);
     world.screen.snap({ curtain: 1, card: 0 });
     world.conductor.place(PODIUM.clone().setY(STAGE_Y + PODIUM_HEIGHT), 'orchestra');
@@ -196,6 +200,8 @@ export class Director {
     world.stageLights.setScreenGlow(0);
     audio.setDrone(0, S.screenToBlack);
     world.stageLights.setLevel(S.stageLevel);
+    world.stageLights.setBeams(S.beams);
+    world.stageLights.setMood(this.setlist[i].mood);
     world.orchestra.setReady(true);
     world.conductor.face('orchestra');
     world.conductor.setPose('ready');
@@ -395,6 +401,8 @@ export class Director {
     const applauseLength = I.applauseBase + I.applauseExtra * peak;
     this.#applause({ strength: I.applauseMin + (1 - I.applauseMin) * peak, duration: applauseLength });
     world.stageLights.setLevel(I.stageLevel);
+    world.stageLights.setBeams(I.beams);
+    world.stageLights.setMood(next.mood);
     world.orchestra.setReady(false);
 
     // 精彩的一首之后，指挥转身向观众致意
@@ -459,6 +467,8 @@ export class Director {
     // 掌声爆发，观众陆续起立，镜头缓缓推近
     this.#applause({ strength: 1, duration: F.applauseDuration, attack: 0.25, release: F.applauseFade });
     world.stageLights.setLevel(F.stageLevel);
+    world.stageLights.setBeams(F.beams);
+    world.stageLights.setMood('epic');
     world.stageLights.setFollow(true);
     world.audience.standUp(F.audienceStagger);
     background(world.rig.fly('finale', F.cameraDuration, tl, signal));

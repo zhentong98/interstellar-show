@@ -11,6 +11,7 @@ export const ceremony = {
     settle: 2.5, // 全员落座后翻开谱子
     murmur: 0.8, // 满场低声交谈的音量
     stageLevel: 0.45, // 开演前舞台是工作光
+    beams: 0.35, // 开演前的体积光束：淡淡的烟雾感
   },
 
   // 2. 调音：首席小提琴起立，双簧管给出 A，全团调音
@@ -29,6 +30,7 @@ export const ceremony = {
     murmurFade: 4,
     cardFade: 3, // 巨幕上的标题卡淡出
     stageLevel: 0.8,
+    beams: 0.7, // 熄灯后光束更显眼
     hold: 1.2,
   },
 
@@ -47,6 +49,7 @@ export const ceremony = {
   song: {
     screenToBlack: 1.4, // 黑洞过渡淡出为黑幕
     stageLevel: 1,
+    beams: 1,
     preloadTimeout: 14, // 最多等下一段缓冲这么久
     stillness: 2, // 指挥举棒后全场静止
     revealFade: 0.8, // 画面真正开始走时幕布拉开
@@ -67,6 +70,7 @@ export const ceremony = {
     applauseExtra: 5,
     acknowledgeAbove: 0.8, // 上一首峰值超过这个值，指挥转身致意
     stageLevel: 0.4, // 灯光转暗
+    beams: 0.9, // 舞台灯转暗，但光束和音管墙依然亮着，配合黑洞
     gargantuaAt: 1.5,
     gargantuaFade: 2.5,
     drone: 0.5, // 黑洞过渡时的低频氛围
@@ -85,6 +89,7 @@ export const ceremony = {
     lower: 1.4,
     audienceStagger: 3.5, // 前排观众陆续起立的时间跨度
     stageLevel: 1.1,
+    beams: 1.3, // 谢幕：全场光束最亮
     turn: 0.9,
     bow: 2.4,
     sectionGap: 2, // 示意各声部起立的间隔

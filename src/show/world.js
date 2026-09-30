@@ -6,9 +6,12 @@
 
 import * as THREE from 'three';
 import { CSS3DRenderer } from 'three/addons/renderers/CSS3DRenderer.js';
-import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { Timeline } from '../core/timeline.js';
-import { buildHall } from '../stage/hall.js';
+import { PostFX } from './post.js';
+import { buildHall, materials as hallMaterials } from '../stage/hall.js';
+import { buildEnvironment } from '../stage/environment.js';
+import { screenMaskUniforms } from '../stage/atmosphere.js';
+import { SCREEN } from '../stage/layout.js';
 import { HouseLights } from '../stage/houseLights.js';
 import { StageLights } from '../stage/stageLights.js';
 import { GiantScreen } from '../stage/screen.js';
@@ -35,24 +38,27 @@ export class World {
     this.gl.domElement.className = 'layer-gl';
     this.gl.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.gl.toneMapping = THREE.ACESFilmicToneMapping;
-    this.gl.toneMappingExposure = 1;
+    this.gl.toneMappingExposure = 1.05;
     this.gl.setClearColor(0x000000, 1);
+    this.gl.shadowMap.enabled = true;
+    this.gl.shadowMap.type = THREE.PCFShadowMap;
     root.append(this.css.domElement, this.gl.domElement);
 
     this.scene = new THREE.Scene();
     this.cssScene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.05, 200);
 
-    // 环境反射：程序生成的房间环境（里程碑 2 换成 HDRI）
-    const pmrem = new THREE.PMREMGenerator(this.gl);
-    this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-    pmrem.dispose();
+    // 环境反射：程序生成的音乐厅环境；放了本地 HDRI 就自动换上
+    buildEnvironment(this.gl, this.scene);
+    // 舞台烟雾：很淡的指数雾，让远处的音管墙和光柱有空气感
+    this.scene.fog = new THREE.FogExp2(0x0c0907, 0.011);
 
     // —— 场景 ——
     const hall = buildHall();
     this.scene.add(hall.group);
     this.house = new HouseLights(hall.lamps);
     this.scene.add(this.house.hemi);
+    for (const l of this.house.washes) this.scene.add(l, l.target);
     this.stageLights = new StageLights();
     this.scene.add(this.stageLights.group);
     this.screen = new GiantScreen();
@@ -67,8 +73,15 @@ export class World {
     this.audience = new Audience(this.house);
     this.scene.add(this.audience.group);
     this.rig = new CameraRig(this.camera);
-    this.orchestra.onDrumImpact = (strength) => this.rig.addShake(0.12 * strength);
+    this.orchestra.onDrumImpact = (strength) => {
+      this.rig.addShake(0.12 * strength);
+      this.post.kick(0.15 * strength);
+    };
     this.stageLights.followSubject = this.conductor.body.position;
+    this.post = new PostFX(this.gl, this.scene, this.camera);
+    this.screenCorners = [-1, 1].flatMap((sx) => [-1, 1].map((sy) => new THREE.Vector3(
+      SCREEN.center.x + (sx * SCREEN.width) / 2, SCREEN.center.y + (sy * SCREEN.height) / 2, SCREEN.center.z)));
+    this.tmpV = new THREE.Vector3();
 
     this.#resize();
     window.addEventListener('resize', () => this.#resize());
@@ -81,8 +94,16 @@ export class World {
     const h = window.innerHeight;
     this.gl.setSize(w, h);
     this.css.setSize(w, h);
+    this.post?.setSize(w, h);
     this.rig.fitToAspect(w / h);
     if (this.rig.mode === 'seat') this.rig.snapToSeat();
+  }
+
+  /** 换成写实人物模型（演员表加载完成后调用，必须在演出开始前） */
+  useCast(cast) {
+    this.orchestra.useCast(cast);
+    this.conductor.useCast(cast);
+    this.stageLights.followSubject = this.conductor.body.position;
   }
 
   start() {
@@ -113,6 +134,7 @@ export class World {
     for (const ev of this.perf.events) {
       if (ev.type === 'flash') {
         this.stageLights.triggerFlash(ev.strength);
+        this.post.kick(0.9 * ev.strength);
         this.rig.addShake(0.06 * ev.strength);
       } else if (ev.type === 'shake') {
         this.rig.addShake(0.3 * ev.strength);
@@ -120,6 +142,26 @@ export class World {
         this.orchestra.drumHit(ev.lead, ev.strength);
       }
     }
+  }
+
+  /**
+   * 巨幕在屏幕上的投影范围，给光束和浮尘做遮罩：电影画面露出来时，光束不能盖在画面上。
+   * 幕布完全落下（换场、开演前）时解除遮罩，光束可以完整扫过银幕前方。
+   */
+  #updateScreenMask() {
+    const rect = screenMaskUniforms.uScreenRect.value.set(9, 9, -9, -9);
+    for (const c of this.screenCorners) {
+      const p = this.tmpV.copy(c).project(this.camera);
+      rect.x = Math.min(rect.x, p.x);
+      rect.y = Math.min(rect.y, p.y);
+      rect.z = Math.max(rect.z, p.x);
+      rect.w = Math.max(rect.w, p.y);
+    }
+    const { curtain, card, gargantua } = this.screen.layers;
+    // 电影露出来（幕布拉开）→ 完全遮住光束；黑洞过渡时也收一半，免得冲淡黑洞
+    const filmVisible = 1 - Math.max(curtain.value, card.value, gargantua.value);
+    screenMaskUniforms.uMask.value = Math.min(1, filmVisible * 1.5 + gargantua.value * 0.6 + card.value * 0.4);
+    this.gl.getDrawingBufferSize(screenMaskUniforms.uResolution.value);
   }
 
   #frame(now) {
@@ -137,10 +179,15 @@ export class World {
     this.conductor.update(dt, perf);
     this.audience.update(dt);
     this.rig.update(dt);
+    this.#updateScreenMask();
+    // 音管自发光（底光打上去的效果）
+    hallMaterials.pipeMetal.emissive.copy(this.stageLights.pipeColor);
+    hallMaterials.pipeMetal.emissiveIntensity = this.stageLights.pipeGlow * 1.4;
     // 环境反射跟着场内整体亮度走，暗场时金属音管不会莫名发亮
-    this.scene.environmentIntensity = 0.03 + 0.14 * Math.max(this.house.average, this.stageLights.level * 0.5);
+    this.scene.environmentIntensity = 0.04 + 0.2 * Math.max(this.house.average, this.stageLights.level * 0.5);
+    this.stageLights.dust.update(dt, this.gl.getPixelRatio() * window.innerHeight * 0.06);
 
-    this.gl.render(this.scene, this.camera);
+    this.post.render(dt);
     this.css.render(this.cssScene, this.camera);
     // 一次性事件只在这一帧有效
     if (this.perf.events.length) this.perf = { ...this.perf, events: [] };

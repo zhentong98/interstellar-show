@@ -58,10 +58,11 @@ export function renderProgramme(root, songs, { onEnter }) {
   const boxes = [...root.querySelectorAll('input[type="checkbox"]')];
   const selected = () => songs.filter((s) => boxes.find((b) => b.value === s.slug)?.checked);
 
+  let busy = null;
   const refresh = () => {
     const n = selected().length;
-    button.disabled = n === 0;
-    note.innerHTML = n === 0 ? '请至少勾选一首。' : defaultNote;
+    button.disabled = n === 0 || !!busy;
+    note.innerHTML = busy ?? (n === 0 ? '请至少勾选一首。' : defaultNote);
   };
   boxes.forEach((b) => b.addEventListener('change', refresh));
   button.addEventListener('click', () => {
@@ -70,6 +71,11 @@ export function renderProgramme(root, songs, { onEnter }) {
   });
 
   return {
+    /** 舞台还没准备好时禁用入场按钮，显示提示；传 null 恢复 */
+    setBusy(text) {
+      busy = text;
+      refresh();
+    },
     /** 节目单放下：纸张下沉淡出 */
     leave(duration) {
       root.style.setProperty('--leave', `${duration}s`);

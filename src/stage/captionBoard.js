@@ -88,6 +88,6 @@ export class CaptionBoard {
 
   update(dt) {
     this.level = damp(this.level, this.target, 3, dt);
-    this.material.color.setScalar(this.level * 1.15);
+    this.material.color.setScalar(this.level * 1.7);
   }
 }

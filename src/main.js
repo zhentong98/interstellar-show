@@ -19,12 +19,16 @@ import { ShowControls } from './ui/controls.js';
 import { DebugHud } from './ui/debugHud.js';
 import { enterFullscreen, exitFullscreen } from './ui/fullscreen.js';
 import { ceremony } from './cues/ceremony.js';
+import { loadCast } from './stage/humans/cast.js';
 
 const params = new URLSearchParams(window.location.search);
 
 const world = new World(document.getElementById('show'));
 world.timeline.speed = Math.max(0.1, Number(params.get('speed')) || 1);
 world.screen.drawTitleCard();
+
+// Claude Artifact 预览版（VITE_PREVIEW_MOCK=1 构建）：页面拿不到网址参数，也不能嵌入 YouTube，默认用模拟播放器
+if (import.meta.env.VITE_PREVIEW_MOCK === '1' && !params.has('mock')) params.set('mock', '90');
 
 // 播放器在节目单阶段就开始加载，入场时已经就绪
 const player = params.has('mock')
@@ -38,6 +42,15 @@ const audio = new ShowAudio();
 const controls = new ShowControls(document.getElementById('controls'));
 
 const programme = renderProgramme(document.getElementById('programme'), songs, { onEnter: enter });
+
+// 写实人物模型（public/models/cast.json）：加载完再允许入场；没有的话直接用程序化人体
+programme.setBusy('正在布置舞台…');
+loadCast()
+  .then((cast) => {
+    if (cast) world.useCast(cast);
+  })
+  .catch((err) => console.warn('人物模型加载失败，使用程序化人体', err))
+  .finally(() => programme.setBusy(null));
 
 function enter(setlist) {
   // 以下几步必须在点击事件的同步调用栈里完成：全屏、解锁 Web Audio、开始静音预载第一段

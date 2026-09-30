@@ -1,17 +1,20 @@
-// 池座观众（里程碑 1：几何体占位）：座椅靠背 + 肩膀 + 头。
+// 池座观众：座椅 + 上半身、脖子、头和各式发型（与乐手共用同一套人体部件几何体）。
 // 相邻两排错开半个座位，所以第 8 排正中的视线从前排两个人之间穿过。
 //
-// - 观众席灯光按排控制每个人的亮度（"逐排熄灭"），灯暗后只剩被巨幕和舞台照出的剪影
+// - 观众席灯光按排控制每个人的亮度（"逐排熄灭"），灯暗后只剩被巨幕和舞台照出的后脑勺剪影
 // - 靠近镜头的几排偶尔有人低头看节目单、侧身和邻座说话
-// - 终场时观众陆续起立
+// - 终场时观众陆续起立鼓掌
 
 import * as THREE from 'three';
 import { damp, seededRandom, range } from '../core/math.js';
 import { SEATING, VIEW_ROW, rowZ, rowFloorY } from './layout.js';
+import { Rig } from './humans/rig.js';
+import { poseBody } from './humans/pose.js';
+import { createLook, bodyParts, bustGeometry, bodyMaterial } from './humans/body.js';
 
-const HAIR = [0x17120f, 0x241a14, 0x35261b, 0x4d3d30, 0x7d766e, 0x8f6f45, 0x0f0f10];
-const CLOTHES = [0x141414, 0x1b1d24, 0x2a211b, 0x34343a, 0x3b2427, 0x23282a];
+const CLOTHES = [0x141414, 0x1b1d24, 0x2e241d, 0x3a3a40, 0x4a2a2e, 0x23302f, 0x5a5048, 0x6b1f24, 0x1f2a44];
 const SEAT = 0x5a1018;
+const STAND_LIFT = 0.41; // 从坐到站，髋部升高
 
 export class Audience {
   /** @param {import('./houseLights.js').HouseLights} house */
@@ -23,10 +26,19 @@ export class Audience {
     this.time = 0;
     this.people = [];
     this.seats = [];
+    this.#template();
     this.#layout();
     this.#build();
     this.lastLevels = new Float32Array(SEATING.rows + 1).fill(-1);
     this.nextFidget = 2;
+  }
+
+  /** 用一副坐着的骨骼求出胸、脖子、头相对座位的矩阵，所有观众共用 */
+  #template() {
+    const rig = new Rig(1);
+    poseBody(rig, { sit: 1 });
+    this.tpl = {};
+    for (const name of ['Spine2', 'Neck', 'Head']) this.tpl[name] = rig.bones[name].matrixWorld.clone();
   }
 
   #layout() {
@@ -42,16 +54,13 @@ export class Audience {
         const seat = { row, x, z: rowZ(row), floor: rowFloorY(row) };
         this.seats.push(seat);
         const isViewer = row === VIEW_ROW && Math.abs(x) < 0.01;
-        // 靠近视线的前几排坐得更满，后排和边上偶有空位
         const fill = Math.abs(x) < 5 && row < VIEW_ROW ? 0.97 : 0.86;
         if (isViewer || r() > fill) continue;
+        const look = createLook(r);
         this.people.push({
           ...seat,
-          scale: range(r, 0.92, 1.08),
-          hair: new THREE.Color(HAIR[Math.floor(r() * HAIR.length)]),
+          look,
           clothes: new THREE.Color(CLOTHES[Math.floor(r() * CLOTHES.length)]),
-          skin: new THREE.Color().setHSL(range(r, 0.05, 0.08), range(r, 0.3, 0.45), range(r, 0.25, 0.55)),
-          bald: r() < 0.08,
           stand: 0,
           standAt: Infinity,
           headPitch: 0,
@@ -59,24 +68,34 @@ export class Audience {
           roll: 0,
           fidget: null,
           phase: r() * Math.PI * 2,
+          lean: range(r, -0.04, 0.04),
         });
       }
     }
   }
 
   #build() {
-    const material = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 });
     const make = (geo, count) => {
-      const mesh = new THREE.InstancedMesh(geo, material, count);
+      const mesh = new THREE.InstancedMesh(geo, bodyMaterial, count);
       mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       mesh.frustumCulled = false;
       this.group.add(mesh);
       return mesh;
     };
-    const n = this.people.length;
-    this.heads = make(new THREE.SphereGeometry(1, 16, 12), n);
-    this.shoulders = make(new THREE.SphereGeometry(1, 14, 10), n);
-    this.torsos = make(new THREE.CapsuleGeometry(0.17, 0.42, 4, 10), n);
+    // 按部件分组：上半身、脖子、头、各种发型
+    const groups = new Map();
+    const add = (key, geo, bone, person, tint) => {
+      if (!groups.has(key)) groups.set(key, { geo, items: [] });
+      groups.get(key).items.push({ person, bone, tint });
+    };
+    for (const p of this.people) {
+      add('bust', bustGeometry(), 'Spine2', p, 'clothes');
+      for (const part of bodyParts(p.look)) {
+        if (part.bone === 'Neck' && part.key === 'neck') add('neck', part.geo, 'Neck', p, 'skin');
+        if (part.bone === 'Head') add(part.key, part.geo, 'Head', p, part.tint);
+      }
+    }
+    this.parts = [...groups.values()].map((g) => ({ ...g, mesh: make(g.geo, g.items.length) }));
 
     // 座椅：靠背 + 坐垫，静态
     const seatGeo = new THREE.BoxGeometry(0.5, 0.56, 0.08).translate(0, 0.68, 0.3);
@@ -85,22 +104,13 @@ export class Audience {
     this.seatBacks = new THREE.InstancedMesh(seatGeo, seatMat, this.seats.length);
     this.cushions = new THREE.InstancedMesh(cushion, seatMat, this.seats.length);
     const m = new THREE.Matrix4();
-    const c = new THREE.Color(SEAT);
     this.seats.forEach((s, i) => {
       m.makeTranslation(s.x, s.floor, s.z);
       this.seatBacks.setMatrixAt(i, m);
       this.cushions.setMatrixAt(i, m);
-      this.seatBacks.setColorAt(i, c);
-      this.cushions.setColorAt(i, c);
     });
     this.group.add(this.seatBacks, this.cushions);
-
-    this.people.forEach((p, i) => {
-      this.heads.setColorAt(i, p.bald ? p.skin : p.hair);
-      this.shoulders.setColorAt(i, p.clothes);
-      this.torsos.setColorAt(i, p.clothes);
-    });
-    this.tmp = { m: new THREE.Matrix4(), q: new THREE.Quaternion(), e: new THREE.Euler(), v: new THREE.Vector3(), s: new THREE.Vector3(), c: new THREE.Color() };
+    this.tmp = { base: new THREE.Matrix4(), m: new THREE.Matrix4(), r: new THREE.Matrix4(), q: new THREE.Quaternion(), e: new THREE.Euler(), v: new THREE.Vector3(), s: new THREE.Vector3(), c: new THREE.Color() };
   }
 
   /** 终场：观众陆续起立。前排先站，后排跟上 */
@@ -117,19 +127,14 @@ export class Audience {
     this.clapping = false;
   }
 
-  setClapping(on) {
-    this.clapping = on;
-  }
-
   update(dt) {
     this.time += dt;
     this.#maybeFidget();
-    const { m, q, e, v, s } = this.tmp;
     const t = this.time;
+    const { base, m, r, q, e, v, s } = this.tmp;
 
-    this.people.forEach((p, i) => {
+    for (const p of this.people) {
       p.stand = damp(p.stand, t >= p.standAt ? 1 : 0, 2.5, dt);
-      // 小动作：低头看节目单、侧身和邻座说话
       let pitch = 0;
       let yaw = 0;
       let roll = 0;
@@ -139,37 +144,34 @@ export class Audience {
         if (k >= 1) p.fidget = null;
         else {
           const env = Math.sin(Math.PI * Math.min(1, k)) ** 0.5;
-          if (f.kind === 'look-down') pitch = 0.45 * env;
+          if (f.kind === 'look-down') pitch = 0.5 * env;
           else if (f.kind === 'talk') {
-            yaw = f.dir * 0.7 * env;
-            roll = f.dir * 0.08 * env;
-          } else if (f.kind === 'shift') roll = f.dir * 0.1 * env;
+            yaw = f.dir * 0.75 * env;
+            roll = f.dir * 0.06 * env;
+          } else if (f.kind === 'shift') roll = f.dir * 0.09 * env;
         }
       }
       p.headPitch = damp(p.headPitch, pitch, 4, dt);
       p.headYaw = damp(p.headYaw, yaw, 4, dt);
       p.roll = damp(p.roll, roll, 3, dt);
-
-      const lift = p.stand * 0.52 + (this.clapping && p.stand > 0.5 ? Math.abs(Math.sin(t * 9 + p.phase)) * 0.008 : 0);
-      const base = p.floor + lift;
-      const sc = p.scale;
-      // 肩膀
-      e.set(0, 0, p.roll);
-      q.setFromEuler(e);
-      m.compose(v.set(p.x, base + 0.93 * sc, p.z + 0.1), q, s.set(0.22 * sc, 0.12 * sc, 0.13 * sc));
-      this.shoulders.setMatrixAt(i, m);
-      // 躯干（站起来时才露出座椅靠背）
-      m.compose(v.set(p.x, base + 0.62 * sc, p.z + 0.12), q, s.set(sc, sc, 0.8 * sc));
-      this.torsos.setMatrixAt(i, m);
-      // 头：绕脖子转动
+      // 起立后随掌声轻轻起伏
+      const clap = this.clapping && p.stand > 0.5 ? Math.abs(Math.sin(t * 9 + p.phase)) * 0.008 : 0;
+      q.setFromAxisAngle(v.set(0, 1, 0), Math.PI); // 面朝舞台（-z）
+      base.compose(v.set(p.x, p.floor + p.stand * STAND_LIFT + clap, p.z + 0.05), q, s.setScalar(p.look.scale));
+      e.set(p.lean, 0, p.roll);
+      r.makeRotationFromEuler(e);
+      p.mChest = (p.mChest ?? new THREE.Matrix4()).multiplyMatrices(base, r).multiply(this.tpl.Spine2);
+      p.mNeck = (p.mNeck ?? new THREE.Matrix4()).multiplyMatrices(base, r).multiply(this.tpl.Neck);
       e.set(p.headPitch, p.headYaw, p.roll * 1.5);
-      q.setFromEuler(e);
-      m.compose(v.set(p.x + p.roll * 0.2, base + 1.15 * sc, p.z + 0.08), q, s.set(0.095 * sc, 0.115 * sc, 0.105 * sc));
-      this.heads.setMatrixAt(i, m);
-    });
-    this.heads.instanceMatrix.needsUpdate = true;
-    this.shoulders.instanceMatrix.needsUpdate = true;
-    this.torsos.instanceMatrix.needsUpdate = true;
+      p.mHead = (p.mHead ?? new THREE.Matrix4()).multiplyMatrices(base, r).multiply(this.tpl.Head).multiply(m.makeRotationFromEuler(e));
+    }
+    for (const { mesh, items } of this.parts) {
+      items.forEach((it, i) => {
+        const p = it.person;
+        mesh.setMatrixAt(i, it.bone === 'Spine2' ? p.mChest : it.bone === 'Neck' ? p.mNeck : p.mHead);
+      });
+      mesh.instanceMatrix.needsUpdate = true;
+    }
     this.#applyHouseLight();
   }
 
@@ -200,21 +202,22 @@ export class Audience {
     }
     if (!changed) return;
     const c = this.tmp.c;
-    const k = (row) => 0.2 + 0.8 * levels[row];
-    this.people.forEach((p, i) => {
-      const f = k(p.row);
-      this.heads.setColorAt(i, c.copy(p.bald ? p.skin : p.hair).multiplyScalar(f));
-      this.shoulders.setColorAt(i, c.copy(p.clothes).multiplyScalar(f));
-      this.torsos.setColorAt(i, c.copy(p.clothes).multiplyScalar(f));
-    });
+    const k = (row) => 0.25 + 0.75 * levels[row];
+    for (const { mesh, items } of this.parts) {
+      items.forEach((it, i) => {
+        const p = it.person;
+        const base = it.tint === 'clothes' ? p.clothes : it.tint === 'hair' ? p.look.hairColor : p.look.skin;
+        mesh.setColorAt(i, c.copy(base).multiplyScalar(k(p.row)));
+      });
+      mesh.instanceColor.needsUpdate = true;
+    }
     const seatColor = new THREE.Color(SEAT);
     this.seats.forEach((s, i) => {
       c.copy(seatColor).multiplyScalar(k(s.row));
       this.seatBacks.setColorAt(i, c);
       this.cushions.setColorAt(i, c);
     });
-    for (const mesh of [this.heads, this.shoulders, this.torsos, this.seatBacks, this.cushions]) {
-      mesh.instanceColor.needsUpdate = true;
-    }
+    this.seatBacks.instanceColor.needsUpdate = true;
+    this.cushions.instanceColor.needsUpdate = true;
   }
 }
