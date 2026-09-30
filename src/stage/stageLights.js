@@ -10,11 +10,15 @@
 //
 // 颜色随曲目基调（songs.js 的 mood）变化；亮度随演奏强度起伏。
 // 光束经过银幕区域时自动淡出（atmosphere.js），真实场馆会严格控制银幕溢光。
+//
+// 亮度按 lightBudget.js 的照度约定来定：每盏灯写"打到目标处的照度"，由距离换算成坎德拉。
+// 分区顶光在弦乐区是两盏叠加（前排一盏、纵深一盏），两盏合计约等于主光 KEY。
 
 import * as THREE from 'three';
 import { damp } from '../core/math.js';
 import { STAGE_Y, SCREEN, PODIUM, ORGAN_CONSOLE, HALL } from './layout.js';
 import { Beam, Dust } from './atmosphere.js';
+import { LUX, candela } from './lightBudget.js';
 
 const WARM = 0xffd2a6;
 const v = (x, y, z) => new THREE.Vector3(x, y, z);
@@ -29,7 +33,9 @@ const MOODS = {
   farewell: { boom: 0xff9a74, pipe: 0xffc3a3 },
 };
 
-function spot({ color = WARM, intensity, angle, penumbra = 0.6, position, target, shadow = false }) {
+/** 聚光灯；lux 是它在目标点（正对灯光的表面）上的照度，换算成坎德拉 */
+function spot({ color = WARM, lux, angle, penumbra = 0.6, position, target, shadow = false }) {
+  const intensity = candela(lux, position.distanceTo(target), color);
   const light = new THREE.SpotLight(color, intensity, 0, angle, penumbra, 2);
   light.position.copy(position);
   light.target.position.copy(target);
@@ -51,13 +57,14 @@ export class StageLights {
     this.group.name = '舞台灯光';
     this.beams = [];
 
-    // —— 分区顶光 ——
+    // —— 分区顶光 ——（lux 是占主光 KEY 的份额：弦乐区前后两盏叠加，管风琴另有谱架台灯）
+    const K = LUX.key;
     this.sections = [
-      { light: spot({ intensity: 1700, angle: 0.44, position: v(-7, 14, 3), target: v(-3.2, STAGE_Y, -3.8), shadow: true }), beam: 0.22 },
-      { light: spot({ intensity: 1200, angle: 0.36, position: v(-2.5, 14.5, 0.5), target: v(-1.8, STAGE_Y, -6) }), beam: 0.16 },
-      { light: spot({ intensity: 1450, angle: 0.34, position: v(8, 15, -1), target: v(6.8, STAGE_Y + 1, -9), shadow: true }), beam: 0.2 },
-      { light: spot({ intensity: 900, angle: 0.25, position: v(7.5, 13, 2.5), target: v(4.9, STAGE_Y, -3.6) }), beam: 0.22 },
-      { light: spot({ intensity: 1000, angle: 0.26, position: v(2.5, 13, -2), target: ORGAN_CONSOLE.clone() }), beam: 0.2 },
+      { light: spot({ lux: 0.6 * K, angle: 0.44, position: v(-7, 14, 3), target: v(-3.2, STAGE_Y, -3.8), shadow: true }), beam: 0.22 },
+      { light: spot({ lux: 0.4 * K, angle: 0.36, position: v(-2.5, 14.5, 0.5), target: v(-1.8, STAGE_Y, -6) }), beam: 0.16 },
+      { light: spot({ lux: 0.9 * K, angle: 0.34, position: v(8, 15, -1), target: v(6.8, STAGE_Y + 1, -9), shadow: true }), beam: 0.2 },
+      { light: spot({ lux: 0.8 * K, angle: 0.25, position: v(7.5, 13, 2.5), target: v(4.9, STAGE_Y, -3.6) }), beam: 0.22 },
+      { light: spot({ lux: 0.3 * K, angle: 0.26, position: v(2.5, 13, -2), target: ORGAN_CONSOLE.clone() }), beam: 0.2 },
     ];
     for (const s of this.sections) {
       s.beamObj = new Beam({ from: s.light.position, to: s.light.target.position, angle: s.light.angle * 0.75 });
@@ -69,11 +76,12 @@ export class StageLights {
       for (const [k, h] of [0.9, 1.9, 2.9].entries()) {
         const from = v(side * (HALL.halfWidth - 1.6), STAGE_Y + h, -3.2 - k * 2.2);
         const to = v(-side * 3, STAGE_Y + h * 0.55, -4.5 - k * 1.5);
-        this.booms.push({ beamObj: new Beam({ from, to, angle: 0.085, length: 17 }), from, to, side, k, phase: k * 1.7 + side });
+        // 侧光的光柱只在侧台附近清楚，横穿到舞台中间时已经散开（falloff 大），不会在乐团身上拉出一道灰带
+        this.booms.push({ beamObj: new Beam({ from, to, angle: 0.085, length: 17, falloff: 3.5 }), from, to, side, k, phase: k * 1.7 + side });
       }
     }
     this.boomLights = [-1, 1].map((side) => spot({
-      intensity: 700, angle: 0.55, penumbra: 0.8,
+      color: MOODS.preshow.boom, lux: 0.4 * K, angle: 0.55, penumbra: 0.8,
       position: v(side * (HALL.halfWidth - 1.6), STAGE_Y + 2, -5), target: v(-side * 2, STAGE_Y + 1, -5.5),
     }));
 
@@ -86,21 +94,24 @@ export class StageLights {
         this.uplights.push({ beamObj: new Beam({ from, to: v(side * x, 20, pipeZ + 0.1), angle: 0.07 }) });
       }
     }
+    // 只照金属音管和深色琴箱（没有白色漫反射表面），可以比主光亮
     this.pipeLights = [-1, 1].map((side) => spot({
-      intensity: 900, angle: 0.5, penumbra: 0.7,
+      lux: 1.5 * K, angle: 0.5, penumbra: 0.7,
       position: v(side * (SCREEN.width / 2 + 2.2), 5.4, pipeZ + 1.6), target: v(side * (SCREEN.width / 2 + 2.2), 16, pipeZ),
     }));
 
-    // —— 指挥追光：从观众席后方的控制室打过来 ——
-    this.follow = spot({ color: 0xfff1de, intensity: 11000, angle: 0.045, penumbra: 0.5, position: v(0, 15, 27), target: PODIUM.clone(), shadow: true });
+    // —— 指挥追光：从观众席后方的控制室打过来 ——（比声部主光亮一些，指挥是全场焦点）
+    this.follow = spot({ color: 0xfff1de, lux: 1.25 * K, angle: 0.045, penumbra: 0.5, position: v(0, 15, 27), target: PODIUM.clone(), shadow: true });
     this.followBeam = new Beam({ from: this.follow.position, to: PODIUM.clone().setY(STAGE_Y), angle: 0.04, color: 0xfff1de });
 
     // —— 逆光、银幕反光、爆闪 ——
     // 放得够高，它在光亮地板上的镜面反射落在台口之外，不会正对观众形成一块刺眼的反光
-    this.rim = spot({ color: 0xcfe0ff, intensity: 420, angle: 0.55, penumbra: 0.9, position: v(0, 8, -12.4), target: v(0, STAGE_Y + 1.2, -4) });
-    this.screenGlow = spot({ color: 0xa8c4ff, intensity: 160, angle: 1.1, penumbra: 1, position: SCREEN.center.clone().setZ(SCREEN.center.z + 0.3), target: v(0, 0, 10) });
+    this.rim = spot({ color: 0xcfe0ff, lux: 0.5 * K, angle: 0.55, penumbra: 0.9, position: v(0, 8, -12.4), target: v(0, STAGE_Y + 1.2, -4) });
+    this.screenGlow = spot({ color: 0xa8c4ff, lux: 0.13, angle: 1.1, penumbra: 1, position: SCREEN.center.clone().setZ(SCREEN.center.z + 0.3), target: v(0, 0, 10) });
+    // 爆闪：乐团中心约 7 米外，照度是主光的 8 倍，白布、皮肤都会冲过 Bloom 门槛，整个舞台一起发光
     this.flashLight = new THREE.PointLight(0xffffff, 0, 0, 2);
     this.flashLight.position.set(0, 9, -4);
+    this.flashLight.baseIntensity = candela(8 * K, 7);
 
     const lights = [...this.sections.map((s) => s.light), ...this.boomLights, ...this.pipeLights, this.follow, this.rim, this.screenGlow];
     for (const l of lights) this.group.add(l, l.target);
@@ -224,12 +235,12 @@ export class StageLights {
       const sway = Math.sin(t * 0.23 + b.phase) * (0.8 + 1.8 * k);
       b.beamObj.aim(v(b.to.x, b.to.y + Math.sin(t * 0.17 + b.phase) * 0.3, b.to.z + sway));
       b.beamObj.uniforms.uColor.value.copy(this.boomColor);
-      b.beamObj.intensity = this.beamLevel * (0.12 + 0.55 * k) * (1 - 0.15 * b.k) + flash * 0.8;
+      b.beamObj.intensity = this.beamLevel * (0.05 + 0.2 * k) * (1 - 0.15 * b.k) + flash * 0.5;
       b.beamObj.uniforms.uTime.value = t;
     }
     for (const l of this.boomLights) {
       l.color.copy(this.boomColor);
-      l.intensity = l.baseIntensity * this.beamLevel * (0.3 + 0.9 * k) + flash * 1200;
+      l.intensity = l.baseIntensity * (this.beamLevel * (0.3 + 0.9 * k) + flash * 1.7);
     }
 
     // 音管墙：底光光柱 + 音管自发光
@@ -243,7 +254,8 @@ export class StageLights {
       l.color.copy(this.pipeColor);
       l.intensity = l.baseIntensity * (this.beamLevel * (0.35 + 0.8 * k) + flash * 2);
     }
-    this.lensMaterial.color.copy(this.boomColor).multiplyScalar(0.4 + 3 * this.beamLevel * (0.3 + k) + flash * 4);
+    // 灯头镜片是真正的光源：要比 Bloom 门槛亮出一截才会晕开（post.js 只让超出门槛的部分发光）
+    this.lensMaterial.color.copy(this.boomColor).multiplyScalar(0.8 + 6 * this.beamLevel * (0.3 + k) + flash * 8);
 
     // 指挥追光
     if (this.followSubject) {
@@ -257,7 +269,7 @@ export class StageLights {
     this.rim.intensity = this.rim.baseIntensity * this.level * (0.6 + 0.8 * k);
     this.screenGlow.intensity = this.screenGlow.baseIntensity * this.glow;
     this.screenGlow.color.copy(this.glowColor);
-    this.flashLight.intensity = flash * 3200;
+    this.flashLight.intensity = flash * this.flashLight.baseIntensity;
 
     // 浮尘跟着最亮的几束光
     const lit = this.allBeams().filter((b) => b.intensity > 0.01).sort((a, b) => b.intensity - a.intensity);

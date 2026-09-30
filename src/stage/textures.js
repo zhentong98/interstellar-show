@@ -3,6 +3,7 @@
 
 import * as THREE from 'three';
 import { seededRandom } from '../core/math.js';
+import { whiteMaterial } from './lightBudget.js';
 
 /** 平滑的二维值噪声，周期为 period，可无缝平铺 */
 function valueNoise(rand, period) {
@@ -98,7 +99,7 @@ export const wallWood = () => cached('wall', () => canvasTexture(256, (ctx, s) =
 
 /** 管风琴控制台的琴键：白键 + 黑键，沿贴图 x 方向排列 */
 export const organKeys = () => cached('keys', () => canvasTexture(512, (ctx, s) => {
-  ctx.fillStyle = '#efe8d8';
+  ctx.fillStyle = `#${whiteMaterial(0xefe8d8).getHexString()}`; // 象牙白键，反照率按白色材质上限
   ctx.fillRect(0, 0, s, s);
   const white = 30;
   const w = s / white;
