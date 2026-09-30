@@ -65,6 +65,8 @@ export class StageLights {
       { light: spot({ lux: 0.9 * K, angle: 0.34, position: v(8, 15, -1), target: v(6.8, STAGE_Y + 1, -9), shadow: true }), beam: 0.2 },
       { light: spot({ lux: 0.8 * K, angle: 0.25, position: v(7.5, 13, 2.5), target: v(4.9, STAGE_Y, -3.6) }), beam: 0.22 },
       { light: spot({ lux: 0.3 * K, angle: 0.26, position: v(2.5, 13, -2), target: ORGAN_CONSOLE.clone() }), beam: 0.2 },
+      // 钢琴（左后角，winds.js）：原有的灯都照不到，补一盏最简单的顶光，不投影
+      { light: spot({ lux: 0.7 * K, angle: 0.22, position: v(-6, 14, 0), target: v(-8.8, STAGE_Y, -7) }), beam: 0.1 },
     ];
     for (const s of this.sections) {
       s.beamObj = new Beam({ from: s.light.position, to: s.light.target.position, angle: s.light.angle * 0.75 });

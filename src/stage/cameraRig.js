@@ -60,6 +60,8 @@ export const SHOTS = {
   organ: { label: '管风琴', key: '7', pos: v(2.7, 2.5, -7.0), target: v(0.3, 1.8, -8.6), fov: 36 },
   // 放在定音鼓的左后方，定音鼓手不会挡在前景里
   choir: { label: '合唱团', key: '8', pos: v(2.0, 3.3, -4.8), target: v(6.8, 2.6, -9.2), fov: 40 },
+  // 从指挥右前方高处斜着俯拍木管两排：越过前排谱架看到吹奏的人和乐器，背景是管风琴控制台
+  winds: { label: '木管', key: '9', pos: v(2.7, 3.5, -2.0), target: v(1.1, 2.0, -6.1), fov: 34 },
 };
 
 /** 观众能选的全部镜头（按控制条上的顺序） */
@@ -84,7 +86,7 @@ const AUTO = {
   // 特写机位被选中的权重
   weights: {
     wide: [1.5, 2.5], conductor: [2, 2], violins: [2, 1.5], cellos: [1.5, 1.5],
-    timpani: [0.3, 1.5], organ: [1, 1], choir: [1, 1.5],
+    timpani: [0.3, 1.5], organ: [1, 1], choir: [1, 1.5], winds: [1.5, 1],
   },
   seatHold: [16, 11],
   shotHold: [5.5, 4.5],

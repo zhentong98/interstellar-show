@@ -1,4 +1,5 @@
 // 乐团：约 40 人弦乐（左侧四道弧）、30 人合唱（右后方台阶）、4 架定音鼓（右前方）、管风琴手（中央控制台）。
+// 木管 8 人（指挥正前方偏右的两层台阶）、圆号 4 支（弦乐后方台阶）、钢琴 2 架（左后角）在 winds.js，这里只留接入的钩子。
 //
 // 每位乐手都有一副按 Mixamo 命名的骨骼（humans/rig.js），用 IK 摆姿势：
 //   - 拉弓的右手追着弓根走，按弦的左手握着琴颈，弓毛始终压在琴马附近的弦上
@@ -27,6 +28,7 @@ import {
 } from './instruments.js';
 import { organKeys } from './textures.js';
 import { LUX, candela, whiteMaterial } from './lightBudget.js';
+import { windMusicians, assignWindSlots, windParts, buildWindProps, WindPlayers, WIND_ROLES, WIND_BAKE_KIND, WIND_SECTIONS } from './winds.js';
 
 // 白色漫反射材质按 lightBudget.js 的反照率上限取色；金属留一点粗糙度，
 // 顶光在鼓圈、鼓身上是一道柔和的高光，而不是一圈被 Bloom 晕开的亮环
@@ -141,10 +143,10 @@ function blend(out, a, b, k) {
 const STRINGS = ['violin1', 'violin2', 'viola', 'cello', 'bass'];
 
 /** 声部 → 演员表里的角色类型 */
-const ROLE_OF = { violin1: 'strings', violin2: 'strings', viola: 'strings', cello: 'strings', bass: 'strings', choir: 'choir', timpani: 'timpani', organ: 'organ' };
+const ROLE_OF = { violin1: 'strings', violin2: 'strings', viola: 'strings', cello: 'strings', bass: 'strings', choir: 'choir', timpani: 'timpani', organ: 'organ', ...WIND_ROLES };
 
 /** 后排烘焙：声部类别和各自需要的姿势（按顺序匹配第一个满足条件的） */
-const BAKE_KIND = { violin1: 'violin', violin2: 'violin', viola: 'viola', cello: 'cello', bass: 'bass', choir: 'choir' };
+const BAKE_KIND = { violin1: 'violin', violin2: 'violin', viola: 'viola', cello: 'cello', bass: 'bass', choir: 'choir', ...WIND_BAKE_KIND };
 const STRING_POSES = [
   { name: 'sitPlay', sit: 1, raise: 1, test: (m) => m.sit > 0.5 && m.raise > 0.5 },
   { name: 'sitRest', sit: 1, raise: 0, test: (m) => m.sit > 0.5 },
@@ -159,6 +161,8 @@ const BAKE_POSES = {
     { name: 'sing', sit: 0, raise: 1, test: (m) => m.raise > 0.5 },
     { name: 'stand', sit: 0, raise: 0, test: () => true },
   ],
+  // 木管、圆号、钢琴：同样是 演奏 / 坐着放下 / 站立
+  ...Object.fromEntries(Object.values(WIND_BAKE_KIND).map((kind) => [kind, STRING_POSES])),
 };
 const BOWED_SMALL = ['violin1', 'violin2', 'viola'];
 
@@ -189,6 +193,7 @@ export class Orchestra {
     this.#buildBodies();
     this.#buildProps();
     this.#buildInstruments();
+    this.winds = new WindPlayers(this.musicians);
   }
 
   #createMusicians() {
@@ -270,6 +275,8 @@ export class Orchestra {
       front: true,
       look: createLook(r),
     }));
+    // 木管、圆号、钢琴（winds.js）
+    list.push(...windMusicians(base, r));
 
     const slots = { violin: 0, cello: 0, bow: 0, folder: 0 };
     list.forEach((m, i) => {
@@ -281,6 +288,7 @@ export class Orchestra {
       if (m.section === 'cello' || m.section === 'bass') m.slot.cello = slots.cello++;
       if (STRINGS.includes(m.section)) m.slot.bow = slots.bow++;
       if (m.section === 'choir') m.slot.folder = slots.folder++;
+      assignWindSlots(m, slots);
     });
     this.concertmasterIndex = list.findIndex((m) => m.section === 'violin1');
     this.timpanist = list.find((m) => m.section === 'timpani');
@@ -306,7 +314,7 @@ export class Orchestra {
 
   /** 椅子、谱架、合唱台阶、定音鼓、管风琴控制台 */
   #buildProps() {
-    const seated = this.musicians.filter((m) => m.seated && m.section !== 'organ');
+    const seated = this.musicians.filter((m) => m.seated && m.section !== 'organ' && !m.ownSeat);
     const leg = (x, z) => new THREE.CylinderGeometry(0.012, 0.012, 0.46, 6).translate(x, 0.23, z);
     const chairGeo = mergeGeometries([
       new THREE.BoxGeometry(0.44, 0.05, 0.42).translate(0, 0.46, 0),
@@ -342,7 +350,7 @@ export class Orchestra {
       if (m.section === 'bass') stools.setMatrixAt(bi++, m4);
       else chairs.setMatrixAt(ci++, m4);
       const fwd = new THREE.Vector3(Math.sin(m.yaw), 0, Math.cos(m.yaw));
-      const standPos = m.seat.clone().addScaledVector(fwd, m.section === 'cello' || m.section === 'bass' ? 1.15 : 0.85);
+      const standPos = m.seat.clone().addScaledVector(fwd, m.standDist ?? (m.section === 'cello' || m.section === 'bass' ? 1.15 : 0.85));
       m4.compose(standPos, q, one);
       stands.setMatrixAt(i, m4);
       this.standOf.set(m.index, { i, pos: standPos, quat: q.clone() });
@@ -432,6 +440,9 @@ export class Orchestra {
     }
     consoleGroup.add(cabinet, manuals, stops, pedals, bench, lamp, lampLight);
     this.group.add(consoleGroup);
+
+    // 木管、圆号的台阶，两架钢琴和琴凳
+    buildWindProps(this.group);
   }
 
   #buildInstruments() {
@@ -450,6 +461,7 @@ export class Orchestra {
       bow: make(bowGeometry(), accessory, count(STRINGS)),
       folder: make(folderGeometry(), accessory, count(['choir'])),
       mallet: make(malletGeometry(), accessory, 2),
+      ...windParts(this.musicians, make),
     };
   }
 
@@ -595,10 +607,10 @@ export class Orchestra {
     this.concertmaster.sitTarget = standing ? 0 : 1;
   }
 
-  /** 调音：弦乐把乐器架起来，弓子短促地来回 */
+  /** 调音：弦乐把乐器架起来，弓子短促地来回；木管、圆号也举起乐器吹长音 */
   setTuning(on) {
     this.tuning = on;
-    for (const m of this.musicians) if (STRINGS.includes(m.section)) m.raiseTarget = on ? 1 : 0;
+    for (const m of this.musicians) if (STRINGS.includes(m.section) || WIND_SECTIONS.includes(m.section)) m.raiseTarget = on ? 1 : 0;
   }
 
   /** 演奏准备：弦乐架琴、合唱举起谱夹、鼓手举槌、管风琴手把手放上键盘 */
@@ -644,6 +656,7 @@ export class Orchestra {
     const t = this.time;
     const { intensity, playing } = perf;
     this.#updateDrums(dt);
+    this.winds.update(dt, perf, this.tuning);
 
     this.frame = (this.frame ?? 0) + 1;
     for (const m of this.musicians) {
@@ -697,6 +710,7 @@ export class Orchestra {
   }
 
   #poseMusician(m, t, perf) {
+    if (this.winds.owns(m)) return this.winds.pose(m, t, perf);
     const rig = m.rig;
     const walking = m.walk > 0 && m.walk < 1;
     let yaw = m.yaw;
@@ -735,6 +749,7 @@ export class Orchestra {
    * 双手的 IK 目标由乐器位置推出来，所以手永远握在琴颈、弓根上。
    */
   #placeInstrument(m, t, perf, write = this.writeInstrument) {
+    if (this.winds.owns(m)) return this.winds.place(m, t, perf, write);
     const rig = m.rig;
     const { m: M, m2, m3, v, v2, v3, v4 } = this.tmp;
     const root = rig.root.matrixWorld;
