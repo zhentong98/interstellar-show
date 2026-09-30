@@ -18,8 +18,9 @@ floorTexture.needsUpdate = true;
 export const materials = {
   wallWood: new THREE.MeshStandardMaterial({ color: 0xb08a6a, map: wallWood(), roughness: 0.6 }),
   finWood: new THREE.MeshStandardMaterial({ color: 0x8a6040, roughness: 0.45 }),
-  // 舞台地板：蜂蜜色木板，半光泽，追光打下来会有一圈反光
-  stageFloor: new THREE.MeshStandardMaterial({ color: 0x8a7060, map: floorTexture, roughness: 0.55 }),
+  // 舞台地板：蜂蜜色木板，哑光清漆：追光打下来有一圈柔和的反光，
+  // 但不会像镜面一样把顶光反射成一大团亮斑（特写机位俯拍地板时尤其明显）
+  stageFloor: new THREE.MeshStandardMaterial({ color: 0x8a7060, map: floorTexture, roughness: 0.75 }),
   stageFront: new THREE.MeshStandardMaterial({ color: 0x1c140f, roughness: 0.7 }),
   stallsFloor: new THREE.MeshStandardMaterial({ color: 0x3a2320, roughness: 0.95 }),
   ceiling: new THREE.MeshStandardMaterial({ color: 0x2b2420, roughness: 0.9 }),

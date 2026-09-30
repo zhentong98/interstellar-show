@@ -38,7 +38,8 @@ export class World {
     this.gl.domElement.className = 'layer-gl';
     this.gl.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.gl.toneMapping = THREE.ACESFilmicToneMapping;
-    this.gl.toneMappingExposure = 1.05;
+    // 曝光与灯光预算配套（lightBudget.js）：主光下的白衬衫落在 ACES 肩部以下，不会发白
+    this.gl.toneMappingExposure = 1.15;
     this.gl.setClearColor(0x000000, 1);
     this.gl.shadowMap.enabled = true;
     this.gl.shadowMap.type = THREE.PCFShadowMap;
@@ -183,9 +184,12 @@ export class World {
     this.#updateScreenMask();
     // 音管自发光（底光打上去的效果）
     hallMaterials.pipeMetal.emissive.copy(this.stageLights.pipeColor);
-    hallMaterials.pipeMetal.emissiveIntensity = this.stageLights.pipeGlow * 1.4;
-    // 环境反射跟着场内整体亮度走，暗场时金属音管不会莫名发亮
-    this.scene.environmentIntensity = 0.04 + 0.2 * Math.max(this.house.average, this.stageLights.level * 0.5);
+    hallMaterials.pipeMetal.emissiveIntensity = this.stageLights.pipeGlow * 1.8;
+    // 环境光（漫反射补光 + 反射）跟着场内整体亮度走：观众席亮灯时是整个厅的暖色反光，
+    // 熄灯后只剩舞台溢出来的一点光，暗场时金属音管不会莫名发亮。
+    // 按平均辐照度折算成照度，换成 HDRI 时整体亮度不跳变（见 environment.js）
+    const envLux = 0.05 + 0.45 * this.house.average + 0.05 * this.stageLights.level;
+    this.scene.environmentIntensity = envLux / this.scene.userData.envIrradiance;
     this.stageLights.dust.update(dt, this.gl.getPixelRatio() * window.innerHeight * 0.06);
 
     this.post.render(dt);
